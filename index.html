@@ -12,7 +12,7 @@
   <main class="app">
     <header class="app-header">
       <h1>SWT Logger</h1>
-      <span>v0.4</span>
+      <span>v0.5</span>
     </header>
 
     <details class="settings-card" id="settingsDetails" open>
@@ -22,16 +22,36 @@
           <label>
             出力形式
             <select id="outputFormat">
-              <option value="log" selected>ログ表（日時・値・状態・メモ）</option>
-              <option value="table">自由表（横方向に値を入れる）</option>
+              <option value="log">ログ表</option>
+              <option value="table">自由表</option>
+              <option value="labeled" selected>行ラベル付き測定表</option>
             </select>
           </label>
 
           <label id="tableHeadersField" class="wide hidden-field">
             自由表の列名
             <input id="tableHeaders" type="text" value="測定1,測定2,測定3" placeholder="例：左,中央,右" />
-            <small>カンマ区切りで指定</small>
+            <small>カンマ区切り</small>
           </label>
+
+          <div id="labeledFields" class="wide schema-box">
+            <label>
+              左端ヘッダー
+              <input id="rowHeaderName" type="text" value="場所" placeholder="例：場所" />
+            </label>
+            <label>
+              測定ヘッダー
+              <input id="measureHeaders" type="text" value="1回目,2回目,3回目" placeholder="例：1回目,2回目,3回目" />
+              <small>カンマ区切り</small>
+            </label>
+            <label class="wide">
+              行ラベル
+              <textarea id="rowLabels" rows="3" placeholder="A&#10;B&#10;C">A
+B
+C</textarea>
+              <small>1行に1つ。カンマ区切りでも可</small>
+            </label>
+          </div>
 
           <label>
             記録方法
@@ -117,21 +137,36 @@
         <button id="stopBtn" class="danger" disabled>停止</button>
       </div>
 
-      <div class="target-line" id="targetLine">出力先：ログ表</div>
+      <div class="target-panel">
+        <div>
+          <span>現在の入力先</span>
+          <strong id="targetLine">場所 A / 1回目</strong>
+        </div>
+        <div class="op-state">
+          <span>直前の操作</span>
+          <strong id="lastOperation">未操作</strong>
+        </div>
+      </div>
 
       <div class="insert-box">
-        <textarea id="noteText" rows="2" placeholder="任意文字列（セル内改行も可）"></textarea>
+        <textarea id="noteText" rows="2" placeholder="現在セルへ入れる文字列"></textarea>
         <div class="insert-actions">
-          <button id="insertTextBtn">文字を挿入</button>
-          <button id="newRowBtn">改行（次の行）</button>
+          <button id="insertTextBtn">文字を現在セルへ</button>
+          <button id="nextCellBtn" class="token-btn"><code>,</code> 次セル</button>
+          <button id="newRowBtn" class="token-btn"><code>\n</code> 次行</button>
           <button id="csvBtn" disabled>CSV保存</button>
         </div>
+      </div>
+
+      <div class="csv-legend">
+        <span><code>,</code> = 次の列</span>
+        <span><code>\n</code> = 次の行</span>
       </div>
 
       <div class="last-line">最終記録 <b id="lastTime">--:--:--</b></div>
     </section>
 
-    <details class="preview-card" id="previewDetails">
+    <details class="preview-card" id="previewDetails" open>
       <summary>出力プレビュー</summary>
       <div class="table-wrap">
         <table id="previewTable"></table>
