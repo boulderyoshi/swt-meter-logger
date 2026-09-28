@@ -469,6 +469,9 @@ function updateAfterDataChange() {
   els.shareBtn.disabled = !hasData;
   els.saveBtn.disabled = !hasData;
 
+  els.startBtn.disabled = !stream || loggingActive || tableComplete;
+  els.singleBtn.disabled = !stream || isReading || tableComplete;
+
   updateTargetLine();
   renderPreview();
 }
