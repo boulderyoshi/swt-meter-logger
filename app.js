@@ -17,6 +17,7 @@ const els = {
   currentValue: document.querySelector('#currentValue'),
   currentUnit: document.querySelector('#currentUnit'),
   status: document.querySelector('#status'),
+  confidence: document.querySelector('#confidence'),
   recordCount: document.querySelector('#recordCount'),
   lastTime: document.querySelector('#lastTime'),
   ocrProgress: document.querySelector('#ocrProgress'),
@@ -25,6 +26,7 @@ const els = {
   logBody: document.querySelector('#logBody'),
   captureCanvas: document.querySelector('#captureCanvas'),
   ocrCanvas: document.querySelector('#ocrCanvas'),
+  debugCanvas: document.querySelector('#debugCanvas'),
 };
 
 let stream = null;
@@ -34,6 +36,8 @@ let isReading = false;
 const records = [];
 
 function setStatus(text) { els.status.textContent = text; }
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
 function nowIsoLocal() {
   const d = new Date();
   const pad = n => String(n).padStart(2, '0');
@@ -58,6 +62,7 @@ async function startCamera() {
     return;
   }
   if (stream) stream.getTracks().forEach(t => t.stop());
+
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
@@ -67,8 +72,21 @@ async function startCamera() {
         height: { ideal: 1080 },
       }
     });
+
+    const track = stream.getVideoTracks()[0];
+    try {
+      const caps = track.getCapabilities?.() || {};
+      const advanced = {};
+      if (caps.focusMode?.includes('continuous')) advanced.focusMode = 'continuous';
+      if (caps.exposureMode?.includes('continuous')) advanced.exposureMode = 'continuous';
+      if (Object.keys(advanced).length) await track.applyConstraints({ advanced: [advanced] });
+    } catch (e) {
+      console.debug('camera fine-tuning unavailable', e);
+    }
+
     els.video.srcObject = stream;
     await els.video.play();
+    await sleep(350);
     els.singleBtn.disabled = false;
     els.startBtn.disabled = false;
     els.flipBtn.disabled = false;
@@ -92,13 +110,15 @@ async function ensureWorker() {
   await worker.setParameters({
     tessedit_char_whitelist: '0123456789.',
     tessedit_pageseg_mode: '7',
-    preserve_interword_spaces: '0'
+    preserve_interword_spaces: '0',
+    classify_bln_numeric_mode: '1',
+    user_defined_dpi: '300'
   });
   els.ocrProgress.value = 0;
   return worker;
 }
 
-function drawRoiToCanvas() {
+function captureRoi() {
   const v = els.video;
   const vw = v.videoWidth;
   const vh = v.videoHeight;
@@ -120,68 +140,267 @@ function drawRoiToCanvas() {
   const rw = Number(els.roiW.value) / 100;
   const rh = Number(els.roiH.value) / 100;
   const ry = Number(els.roiY.value) / 100;
-  const rx = 0.5;
 
-  const sx = visibleX + visibleW * (rx - rw / 2);
+  const sx = visibleX + visibleW * (0.5 - rw / 2);
   const sy = visibleY + visibleH * (ry - rh / 2);
   const sw = visibleW * rw;
   const sh = visibleH * rh;
 
-  const outW = 1200;
+  const outW = 1100;
   const outH = Math.max(220, Math.round(outW * sh / sw));
   els.captureCanvas.width = outW;
   els.captureCanvas.height = outH;
-  const cctx = els.captureCanvas.getContext('2d', { willReadFrequently: true });
-  cctx.drawImage(v, sx, sy, sw, sh, 0, 0, outW, outH);
 
-  els.ocrCanvas.width = outW;
-  els.ocrCanvas.height = outH;
-  const octx = els.ocrCanvas.getContext('2d', { willReadFrequently: true });
-  octx.drawImage(els.captureCanvas, 0, 0);
-  const img = octx.getImageData(0, 0, outW, outH);
-  const data = img.data;
-  for (let i = 0; i < data.length; i += 4) {
-    const gray = Math.round(0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2]);
-    const adjusted = Math.max(0, Math.min(255, (gray - 105) * 2.25 + 105));
-    const value = adjusted < 145 ? 0 : 255;
-    data[i] = data[i+1] = data[i+2] = value;
+  const ctx = els.captureCanvas.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(v, sx, sy, sw, sh, 0, 0, outW, outH);
+  return els.captureCanvas;
+}
+
+function buildAdaptiveBinary(srcCanvas) {
+  const w = srcCanvas.width;
+  const h = srcCanvas.height;
+  const sctx = srcCanvas.getContext('2d', { willReadFrequently: true });
+  const src = sctx.getImageData(0, 0, w, h);
+  const gray = new Uint8Array(w * h);
+
+  for (let p = 0, i = 0; p < gray.length; p++, i += 4) {
+    gray[p] = Math.round(0.299 * src.data[i] + 0.587 * src.data[i+1] + 0.114 * src.data[i+2]);
   }
-  octx.putImageData(img, 0, 0);
+
+  const iw = w + 1;
+  const integral = new Uint32Array((w + 1) * (h + 1));
+  for (let y = 1; y <= h; y++) {
+    let rowSum = 0;
+    for (let x = 1; x <= w; x++) {
+      rowSum += gray[(y - 1) * w + (x - 1)];
+      integral[y * iw + x] = integral[(y - 1) * iw + x] + rowSum;
+    }
+  }
+
+  const out = new Uint8ClampedArray(w * h * 4);
+  const binary = new Uint8Array(w * h);
+  const radius = Math.max(14, Math.round(Math.min(w, h) * 0.06));
+  const offset = 9;
+
+  for (let y = 0; y < h; y++) {
+    const y0 = Math.max(0, y - radius);
+    const y1 = Math.min(h - 1, y + radius);
+    for (let x = 0; x < w; x++) {
+      const x0 = Math.max(0, x - radius);
+      const x1 = Math.min(w - 1, x + radius);
+      const A = integral[y0 * iw + x0];
+      const B = integral[y0 * iw + (x1 + 1)];
+      const C = integral[(y1 + 1) * iw + x0];
+      const D = integral[(y1 + 1) * iw + (x1 + 1)];
+      const area = (x1 - x0 + 1) * (y1 - y0 + 1);
+      const mean = (D - B - C + A) / area;
+      const isInk = gray[y * w + x] < mean - offset;
+      binary[y * w + x] = isInk ? 1 : 0;
+
+      const oi = (y * w + x) * 4;
+      const v = isInk ? 0 : 255;
+      out[oi] = out[oi+1] = out[oi+2] = v;
+      out[oi+3] = 255;
+    }
+  }
+
+  return { w, h, out, binary };
+}
+
+function findDecimalAndDigitGroups(binary, w, h) {
+  const columnCounts = new Uint16Array(w);
+  const yTop = Math.floor(h * 0.08);
+  const yBottom = Math.floor(h * 0.92);
+
+  for (let y = yTop; y < yBottom; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      if (binary[row + x]) columnCounts[x]++;
+    }
+  }
+
+  const minDigitInk = Math.max(5, Math.floor((yBottom - yTop) * 0.08));
+  const rawGroups = [];
+  let start = -1;
+  for (let x = 0; x <= w; x++) {
+    const active = x < w && columnCounts[x] >= minDigitInk;
+    if (active && start < 0) start = x;
+    if (!active && start >= 0) {
+      rawGroups.push([start, x - 1]);
+      start = -1;
+    }
+  }
+
+  const gapJoin = Math.max(6, Math.floor(h * 0.035));
+  const merged = [];
+  for (const g of rawGroups) {
+    const prev = merged[merged.length - 1];
+    if (prev && g[0] - prev[1] <= gapJoin) prev[1] = g[1];
+    else merged.push([...g]);
+  }
+
+  const digitGroups = merged.filter(g => (g[1] - g[0] + 1) >= Math.max(8, h * 0.035));
+
+  const visited = new Uint8Array(w * h);
+  const candidates = [];
+  const y0 = Math.floor(h * 0.52);
+
+  for (let y = y0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const idx = y * w + x;
+      if (!binary[idx] || visited[idx]) continue;
+
+      let stack = [idx];
+      visited[idx] = 1;
+      let area = 0, minX = x, maxX = x, minY = y, maxY = y;
+
+      while (stack.length) {
+        const cur = stack.pop();
+        const cy = Math.floor(cur / w);
+        const cx = cur - cy * w;
+        area++;
+        if (cx < minX) minX = cx;
+        if (cx > maxX) maxX = cx;
+        if (cy < minY) minY = cy;
+        if (cy > maxY) maxY = cy;
+
+        const neighbors = [cur - 1, cur + 1, cur - w, cur + w];
+        for (const n of neighbors) {
+          if (n < 0 || n >= w * h || visited[n] || !binary[n]) continue;
+          const ny = Math.floor(n / w);
+          const nx = n - ny * w;
+          if (Math.abs(nx - cx) + Math.abs(ny - cy) !== 1) continue;
+          visited[n] = 1;
+          stack.push(n);
+        }
+      }
+
+      const bw = maxX - minX + 1;
+      const bh = maxY - minY + 1;
+      const boxArea = bw * bh;
+      const density = area / boxArea;
+      const relH = bh / h;
+      const relW = bw / w;
+
+      if (
+        area >= Math.max(15, w * h * 0.00008) &&
+        relH >= 0.025 && relH <= 0.18 &&
+        relW >= 0.008 && relW <= 0.10 &&
+        density >= 0.25 &&
+        maxY / h >= 0.60
+      ) {
+        candidates.push({
+          x: (minX + maxX) / 2,
+          y: (minY + maxY) / 2,
+          area,
+          density,
+          bw,
+          bh
+        });
+      }
+    }
+  }
+
+  candidates.sort((a, b) => (b.area * b.density) - (a.area * a.density));
+  const decimal = candidates.find(c => c.x > w * 0.08 && c.x < w * 0.92) || null;
+  return { decimal, digitGroups };
+}
+
+function renderOcrCanvas(pre) {
+  const pad = Math.round(Math.max(30, pre.h * 0.12));
+  els.ocrCanvas.width = pre.w + pad * 2;
+  els.ocrCanvas.height = pre.h + pad * 2;
+  const ctx = els.ocrCanvas.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, els.ocrCanvas.width, els.ocrCanvas.height);
+  const img = new ImageData(pre.out, pre.w, pre.h);
+  ctx.putImageData(img, pad, pad);
+
+  els.debugCanvas.width = els.ocrCanvas.width;
+  els.debugCanvas.height = els.ocrCanvas.height;
+  els.debugCanvas.getContext('2d').drawImage(els.ocrCanvas, 0, 0);
   return els.ocrCanvas;
 }
 
-function parseValue(text) {
-  const cleaned = text
+function normalizeText(text) {
+  return String(text || '')
     .replace(/,/g, '.')
+    .replace(/[Oo]/g, '0')
     .replace(/[^0-9.]/g, '')
     .replace(/\.{2,}/g, '.');
+}
 
-  const parts = cleaned.split('.');
-  const normalized = parts.length > 1 ? `${parts.shift()}.${parts.join('')}` : cleaned;
-  if (!/^\d{1,5}(\.\d{1,3})?$/.test(normalized)) return null;
-  const value = Number(normalized);
+function parseValue(text) {
+  let cleaned = normalizeText(text);
+  if (!cleaned) return null;
+
+  const firstDot = cleaned.indexOf('.');
+  if (firstDot >= 0) {
+    cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+  }
+
+  if (!/^\d{1,5}(\.\d{1,3})?$/.test(cleaned)) return null;
+  const value = Number(cleaned);
   if (!Number.isFinite(value) || value < 0 || value > 99999) return null;
-  return { value, raw: text.trim(), normalized };
+  return { value, normalized: cleaned };
+}
+
+function recoverDecimalIfNeeded(parsed, rawText, decimalInfo) {
+  if (!decimalInfo?.decimal || !parsed) return parsed;
+  if (normalizeText(rawText).includes('.')) return parsed;
+
+  const digits = parsed.normalized.replace(/\D/g, '');
+  const groups = decimalInfo.digitGroups;
+  if (groups.length !== digits.length || digits.length < 2) return parsed;
+
+  const dotX = decimalInfo.decimal.x;
+  const centers = groups.map(g => (g[0] + g[1]) / 2);
+  const insertAt = centers.filter(x => x < dotX).length;
+  if (insertAt <= 0 || insertAt >= digits.length) return parsed;
+
+  const recovered = `${digits.slice(0, insertAt)}.${digits.slice(insertAt)}`;
+  const value = Number(recovered);
+  if (!Number.isFinite(value)) return parsed;
+  return { value, normalized: recovered, decimalRecovered: true };
+}
+
+async function recognizeCanvas(canvas, decimalInfo) {
+  const w = await ensureWorker();
+  const result = await w.recognize(canvas);
+  const raw = result?.data?.text ?? '';
+  const confidence = Number(result?.data?.confidence ?? 0);
+  let parsed = parseValue(raw);
+  parsed = recoverDecimalIfNeeded(parsed, raw, decimalInfo);
+  return { raw, confidence, parsed };
 }
 
 async function readOnce({ save = true } = {}) {
   if (isReading) return;
   isReading = true;
   els.singleBtn.disabled = true;
+
   try {
     setStatus('読み取り中');
-    const canvas = drawRoiToCanvas();
-    const w = await ensureWorker();
-    const result = await w.recognize(canvas);
-    const text = result?.data?.text ?? '';
-    els.ocrText.textContent = `OCR原文: ${JSON.stringify(text.trim())}`;
-    const parsed = parseValue(text);
+
+    const src = captureRoi();
+    const pre = buildAdaptiveBinary(src);
+    const decimalInfo = findDecimalAndDigitGroups(pre.binary, pre.w, pre.h);
+    const ocrCanvas = renderOcrCanvas(pre);
+
+    const result = await recognizeCanvas(ocrCanvas, decimalInfo);
     const ts = nowIsoLocal();
 
-    if (parsed) {
-      els.currentValue.textContent = parsed.normalized;
-      setStatus('OK');
-      if (save) addRecord(ts, parsed.normalized, 'OK');
+    els.confidence.textContent = `${Math.round(result.confidence)}%`;
+    const recovered = result.parsed?.decimalRecovered ? ' / 小数点補正' : '';
+    els.ocrText.textContent = `OCR原文: ${JSON.stringify(result.raw.trim())}${recovered}`;
+
+    if (result.parsed) {
+      els.currentValue.textContent = result.parsed.normalized;
+      const lowConfidence = result.confidence < 35;
+      setStatus(lowConfidence ? 'LOW_CONFIDENCE' : 'OK');
+      if (save) addRecord(ts, result.parsed.normalized, lowConfidence ? 'LOW_CONFIDENCE' : 'OK');
     } else {
       setStatus('OCR_ERROR');
       if (save) addRecord(ts, '', 'OCR_ERROR');
