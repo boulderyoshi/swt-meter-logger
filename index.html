@@ -10,79 +10,105 @@
 </head>
 <body>
   <main class="app">
-    <header>
-      <h1>SWT Thickness Logger</h1>
-      <p>Safari専用・SANKO SWT液晶向けOCR v0.3</p>
+    <header class="app-header">
+      <h1>SWT Logger</h1>
+      <span>v0.4</span>
     </header>
 
-    <section class="camera-card">
+    <details class="settings-card" id="settingsDetails" open>
+      <summary>初期設定・読み取り設定</summary>
+      <div class="settings-body">
+        <div class="field-grid">
+          <label>
+            出力形式
+            <select id="outputFormat">
+              <option value="log" selected>ログ表（日時・値・状態・メモ）</option>
+              <option value="table">自由表（横方向に値を入れる）</option>
+            </select>
+          </label>
+
+          <label id="tableHeadersField" class="wide hidden-field">
+            自由表の列名
+            <input id="tableHeaders" type="text" value="測定1,測定2,測定3" placeholder="例：左,中央,右" />
+            <small>カンマ区切りで指定</small>
+          </label>
+
+          <label>
+            記録方法
+            <select id="recordMode">
+              <option value="change" selected>表示が変わったら記録</option>
+              <option value="interval">一定間隔で記録</option>
+            </select>
+          </label>
+
+          <label>
+            小数桁
+            <select id="decimalPlaces">
+              <option value="1" selected>1桁固定</option>
+              <option value="auto">自動</option>
+              <option value="0">整数</option>
+              <option value="2">2桁固定</option>
+            </select>
+          </label>
+
+          <label id="intervalField">
+            記録間隔
+            <select id="intervalSec">
+              <option value="1">1秒</option>
+              <option value="5">5秒</option>
+              <option value="10" selected>10秒</option>
+              <option value="30">30秒</option>
+              <option value="60">60秒</option>
+            </select>
+          </label>
+
+          <label id="sensitivityField">
+            変化検出感度
+            <select id="changeSensitivity">
+              <option value="high">高い</option>
+              <option value="normal" selected>標準</option>
+              <option value="low">低い</option>
+            </select>
+          </label>
+
+          <label>
+            単位
+            <select id="unit">
+              <option value="µm" selected>µm</option>
+              <option value="mm">mm</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="roi-grid">
+          <label>枠 幅 <span id="roiWLabel">62%</span><input id="roiW" type="range" min="30" max="90" value="62" /></label>
+          <label>枠 高さ <span id="roiHLabel">24%</span><input id="roiH" type="range" min="12" max="50" value="24" /></label>
+          <label>枠 縦位置 <span id="roiYLabel">56%</span><input id="roiY" type="range" min="30" max="75" value="56" /></label>
+        </div>
+      </div>
+    </details>
+
+    <section class="work-card">
       <div class="camera-wrap" id="cameraWrap">
         <video id="video" playsinline muted></video>
         <div class="roi" id="roi" aria-label="OCR読み取り範囲"></div>
       </div>
-      <div class="camera-actions">
+
+      <div class="camera-line">
         <button id="startCameraBtn" class="primary">カメラ開始</button>
         <button id="flipBtn" disabled>背面カメラ再選択</button>
       </div>
-      <p class="hint">白枠には数字と小数点だけを入れてください。上の「試材」や下の「µm」は外します。</p>
-    </section>
 
-    <section class="controls-card">
-      <div class="field-grid">
-        <label>
-          記録方法
-          <select id="recordMode">
-            <option value="change" selected>表示が変わったら記録</option>
-            <option value="interval">一定間隔で記録</option>
-          </select>
-        </label>
-        <label>
-          小数桁
-          <select id="decimalPlaces">
-            <option value="1" selected>1桁固定</option>
-            <option value="auto">自動</option>
-            <option value="0">整数</option>
-            <option value="2">2桁固定</option>
-          </select>
-        </label>
-        <label id="intervalField">
-          記録間隔
-          <select id="intervalSec">
-            <option value="1">1秒</option>
-            <option value="5">5秒</option>
-            <option value="10" selected>10秒</option>
-            <option value="30">30秒</option>
-            <option value="60">60秒</option>
-          </select>
-        </label>
-        <label id="sensitivityField">
-          変化検出感度
-          <select id="changeSensitivity">
-            <option value="high">高い</option>
-            <option value="normal" selected>標準</option>
-            <option value="low">低い</option>
-          </select>
-        </label>
-        <label>
-          単位
-          <select id="unit">
-            <option value="µm" selected>µm</option>
-            <option value="mm">mm</option>
-          </select>
-        </label>
+      <div class="reading-line">
+        <span class="reading-label">現在値</span>
+        <strong id="currentValue">--.-</strong>
+        <span id="currentUnit">µm</span>
       </div>
 
-      <div class="slider-block">
-        <label>読取枠 幅 <span id="roiWLabel">62%</span></label>
-        <input id="roiW" type="range" min="30" max="90" value="62" />
-      </div>
-      <div class="slider-block">
-        <label>読取枠 高さ <span id="roiHLabel">24%</span></label>
-        <input id="roiH" type="range" min="12" max="50" value="24" />
-      </div>
-      <div class="slider-block">
-        <label>読取枠 縦位置 <span id="roiYLabel">56%</span></label>
-        <input id="roiY" type="range" min="30" max="75" value="56" />
+      <div class="status-line">
+        <span id="status">待機中</span>
+        <span>信頼度 <b id="confidence">--</b></span>
+        <span>測定 <b id="recordCount">0</b></span>
       </div>
 
       <div class="measure-actions">
@@ -90,50 +116,34 @@
         <button id="startBtn" class="primary" disabled>監視開始</button>
         <button id="stopBtn" class="danger" disabled>停止</button>
       </div>
+
+      <div class="target-line" id="targetLine">出力先：ログ表</div>
+
+      <div class="insert-box">
+        <textarea id="noteText" rows="2" placeholder="任意文字列（セル内改行も可）"></textarea>
+        <div class="insert-actions">
+          <button id="insertTextBtn">文字を挿入</button>
+          <button id="newRowBtn">改行（次の行）</button>
+          <button id="csvBtn" disabled>CSV保存</button>
+        </div>
+      </div>
+
+      <div class="last-line">最終記録 <b id="lastTime">--:--:--</b></div>
     </section>
 
-    <section class="status-card">
-      <div class="current-value">
-        <span class="label">現在値</span>
-        <strong id="currentValue">--.-</strong>
-        <span id="currentUnit">µm</span>
+    <details class="preview-card" id="previewDetails">
+      <summary>出力プレビュー</summary>
+      <div class="table-wrap">
+        <table id="previewTable"></table>
       </div>
-      <div class="stats">
-        <div><span>状態</span><strong id="status">待機中</strong></div>
-        <div><span>認識信頼度</span><strong id="confidence">--</strong></div>
-        <div><span>測定記録数</span><strong id="recordCount">0</strong></div>
-        <div><span>最終記録</span><strong id="lastTime">--:--:--</strong></div>
-      </div>
+    </details>
+
+    <details class="debug-card">
+      <summary>OCR診断</summary>
       <progress id="ocrProgress" max="1" value="0"></progress>
       <p id="ocrText" class="ocr-text"></p>
-      <details>
-        <summary>OCRが見ている画像</summary>
-        <canvas id="debugCanvas"></canvas>
-      </details>
-    </section>
-
-    <section class="annotation-card">
-      <h2>CSVへ追記</h2>
-      <div class="annotation-row">
-        <input id="noteText" type="text" placeholder="任意文字列（例：試料A、測定前、再測定）" />
-        <button id="insertTextBtn">文字列を挿入</button>
-      </div>
-      <button id="insertBlankBtn">空行を挿入</button>
-      <p class="hint">ここで追加した文字列・空行は、その位置のままCSVへ出力されます。</p>
-    </section>
-
-    <section class="log-card">
-      <div class="log-head">
-        <h2>記録</h2>
-        <button id="csvBtn" disabled>CSV保存</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>時刻</th><th>値 / 追記</th><th>状態</th></tr></thead>
-          <tbody id="logBody"></tbody>
-        </table>
-      </div>
-    </section>
+      <canvas id="debugCanvas"></canvas>
+    </details>
 
     <canvas id="captureCanvas" hidden></canvas>
     <canvas id="ocrCanvas" hidden></canvas>
