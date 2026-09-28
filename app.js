@@ -1,8 +1,10 @@
 const els = {
   video: document.querySelector('#video'),
   roi: document.querySelector('#roi'),
-  startCameraBtn: document.querySelector('#startCameraBtn'),
-  flipBtn: document.querySelector('#flipBtn'),
+  settingsDetails: document.querySelector('#settingsDetails'),
+  outputFormat: document.querySelector('#outputFormat'),
+  tableHeadersField: document.querySelector('#tableHeadersField'),
+  tableHeaders: document.querySelector('#tableHeaders'),
   recordMode: document.querySelector('#recordMode'),
   decimalPlaces: document.querySelector('#decimalPlaces'),
   intervalField: document.querySelector('#intervalField'),
@@ -16,6 +18,8 @@ const els = {
   roiWLabel: document.querySelector('#roiWLabel'),
   roiHLabel: document.querySelector('#roiHLabel'),
   roiYLabel: document.querySelector('#roiYLabel'),
+  startCameraBtn: document.querySelector('#startCameraBtn'),
+  flipBtn: document.querySelector('#flipBtn'),
   singleBtn: document.querySelector('#singleBtn'),
   startBtn: document.querySelector('#startBtn'),
   stopBtn: document.querySelector('#stopBtn'),
@@ -25,13 +29,14 @@ const els = {
   confidence: document.querySelector('#confidence'),
   recordCount: document.querySelector('#recordCount'),
   lastTime: document.querySelector('#lastTime'),
-  ocrProgress: document.querySelector('#ocrProgress'),
-  ocrText: document.querySelector('#ocrText'),
+  targetLine: document.querySelector('#targetLine'),
   noteText: document.querySelector('#noteText'),
   insertTextBtn: document.querySelector('#insertTextBtn'),
-  insertBlankBtn: document.querySelector('#insertBlankBtn'),
+  newRowBtn: document.querySelector('#newRowBtn'),
   csvBtn: document.querySelector('#csvBtn'),
-  logBody: document.querySelector('#logBody'),
+  previewTable: document.querySelector('#previewTable'),
+  ocrProgress: document.querySelector('#ocrProgress'),
+  ocrText: document.querySelector('#ocrText'),
   captureCanvas: document.querySelector('#captureCanvas'),
   ocrCanvas: document.querySelector('#ocrCanvas'),
   debugCanvas: document.querySelector('#debugCanvas'),
@@ -48,20 +53,35 @@ let changeCandidate = null;
 let changeCandidateCount = 0;
 let measurementCount = 0;
 
-const entries = [];
+let schemaLocked = false;
+let lockedFormat = null;
+const logRows = [];
+let tableColumns = [];
+const tableRows = [];
+let tableCursorRow = 0;
+let tableCursorCol = 0;
+
 const changeCanvas = document.createElement('canvas');
 changeCanvas.width = 96;
 changeCanvas.height = 32;
 
-function setStatus(text) { els.status.textContent = text; }
-function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+function setStatus(text) {
+  els.status.textContent = text;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function nowIsoLocal() {
   const d = new Date();
   const pad = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
-function timeOnly(ts) { return ts.slice(11); }
+
+function timeOnly(ts) {
+  return ts.slice(11);
+}
 
 function updateRoi() {
   els.roi.style.width = `${els.roiW.value}%`;
@@ -72,11 +92,63 @@ function updateRoi() {
   els.roiYLabel.textContent = `${els.roiY.value}%`;
 }
 
-function updateModeUi() {
+function updateSettingsUi() {
   const changeMode = els.recordMode.value === 'change';
   els.intervalField.classList.toggle('hidden-field', changeMode);
   els.sensitivityField.classList.toggle('hidden-field', !changeMode);
+
+  const tableMode = els.outputFormat.value === 'table';
+  els.tableHeadersField.classList.toggle('hidden-field', !tableMode);
+
   els.startBtn.textContent = changeMode ? '監視開始' : '連続記録開始';
+  updateTargetLine();
+}
+
+function parseTableHeaders() {
+  const parts = els.tableHeaders.value
+    .split(/[,\t\n]+/)
+    .map(x => x.trim())
+    .filter(Boolean);
+
+  return parts.length ? parts : ['測定1', '測定2', '測定3'];
+}
+
+function ensureSchema() {
+  if (schemaLocked) return;
+
+  lockedFormat = els.outputFormat.value;
+  schemaLocked = true;
+  els.outputFormat.disabled = true;
+  els.tableHeaders.disabled = true;
+
+  if (lockedFormat === 'table') {
+    tableColumns = parseTableHeaders();
+  }
+
+  updateTargetLine();
+  renderPreview();
+}
+
+function hasOutputData() {
+  if (!schemaLocked) return false;
+  if (lockedFormat === 'log') return logRows.length > 0;
+  return tableRows.length > 0;
+}
+
+function updateCsvState() {
+  els.csvBtn.disabled = !hasOutputData();
+}
+
+function updateTargetLine() {
+  const format = schemaLocked ? lockedFormat : els.outputFormat.value;
+
+  if (format === 'table') {
+    const cols = schemaLocked ? tableColumns : parseTableHeaders();
+    const colName = cols[tableCursorCol] || cols[0] || '測定1';
+    els.targetLine.textContent = `入力先：${tableCursorRow + 1}行目 / ${colName}`;
+  } else {
+    els.targetLine.textContent = '出力先：ログ表（timestamp / value / unit / status / note）';
+  }
 }
 
 function lockMeasurementControls(locked) {
@@ -88,18 +160,22 @@ function lockMeasurementControls(locked) {
   els.roiW.disabled = locked;
   els.roiH.disabled = locked;
   els.roiY.disabled = locked;
-}
 
-[els.roiW, els.roiH, els.roiY].forEach(x => x.addEventListener('input', updateRoi));
-els.unit.addEventListener('change', () => els.currentUnit.textContent = els.unit.value);
-els.recordMode.addEventListener('change', updateModeUi);
+  if (!schemaLocked) {
+    els.outputFormat.disabled = locked;
+    els.tableHeaders.disabled = locked;
+  }
+}
 
 async function startCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
     alert('このブラウザではカメラを利用できません。iPhone SafariをHTTPSで開いてください。');
     return;
   }
-  if (stream) stream.getTracks().forEach(t => t.stop());
+
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+  }
 
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -112,22 +188,27 @@ async function startCamera() {
     });
 
     const track = stream.getVideoTracks()[0];
+
     try {
       const caps = track.getCapabilities?.() || {};
       const advanced = {};
       if (caps.focusMode?.includes('continuous')) advanced.focusMode = 'continuous';
       if (caps.exposureMode?.includes('continuous')) advanced.exposureMode = 'continuous';
-      if (Object.keys(advanced).length) await track.applyConstraints({ advanced: [advanced] });
-    } catch (e) {
-      console.debug('camera fine-tuning unavailable', e);
+      if (Object.keys(advanced).length) {
+        await track.applyConstraints({ advanced: [advanced] });
+      }
+    } catch (err) {
+      console.debug('camera fine-tuning unavailable', err);
     }
 
     els.video.srcObject = stream;
     await els.video.play();
     await sleep(350);
+
     els.singleBtn.disabled = false;
     els.startBtn.disabled = false;
     els.flipBtn.disabled = false;
+    els.settingsDetails.open = false;
     setStatus('カメラ準備完了');
   } catch (err) {
     console.error(err);
@@ -138,13 +219,20 @@ async function startCamera() {
 
 async function ensureWorker() {
   if (worker) return worker;
+
   setStatus('OCR初期化中');
+
   worker = await Tesseract.createWorker('eng', 1, {
-    logger: m => {
-      if (typeof m.progress === 'number') els.ocrProgress.value = m.progress;
-      if (m.status) els.ocrText.textContent = `OCR: ${m.status}`;
+    logger: message => {
+      if (typeof message.progress === 'number') {
+        els.ocrProgress.value = message.progress;
+      }
+      if (message.status) {
+        els.ocrText.textContent = `OCR: ${message.status}`;
+      }
     }
   });
+
   await worker.setParameters({
     tessedit_char_whitelist: '0123456789.',
     tessedit_pageseg_mode: '8',
@@ -152,6 +240,7 @@ async function ensureWorker() {
     classify_bln_numeric_mode: '1',
     user_defined_dpi: '300'
   });
+
   els.ocrProgress.value = 0;
   return worker;
 }
@@ -160,7 +249,10 @@ function getRoiSourceRect() {
   const v = els.video;
   const vw = v.videoWidth;
   const vh = v.videoHeight;
-  if (!vw || !vh) throw new Error('video not ready');
+
+  if (!vw || !vh) {
+    throw new Error('video not ready');
+  }
 
   const wrap = document.querySelector('#cameraWrap').getBoundingClientRect();
   const shownAspect = wrap.width / wrap.height;
@@ -204,19 +296,33 @@ function captureRoi() {
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(
     els.video,
-    rect.sx, rect.sy, rect.sw, rect.sh,
-    0, 0, outW, outH
+    rect.sx,
+    rect.sy,
+    rect.sw,
+    rect.sh,
+    0,
+    0,
+    outW,
+    outH
   );
+
   return els.captureCanvas;
 }
 
 function captureFingerprint() {
   const rect = getRoiSourceRect();
   const ctx = changeCanvas.getContext('2d', { willReadFrequently: true });
+
   ctx.drawImage(
     els.video,
-    rect.sx, rect.sy, rect.sw, rect.sh,
-    0, 0, changeCanvas.width, changeCanvas.height
+    rect.sx,
+    rect.sy,
+    rect.sw,
+    rect.sh,
+    0,
+    0,
+    changeCanvas.width,
+    changeCanvas.height
   );
 
   const data = ctx.getImageData(0, 0, changeCanvas.width, changeCanvas.height).data;
@@ -230,31 +336,45 @@ function captureFingerprint() {
   }
 
   const mean = sum / gray.length;
-  for (let i = 0; i < gray.length; i++) gray[i] -= mean;
+  for (let i = 0; i < gray.length; i++) {
+    gray[i] -= mean;
+  }
+
   return gray;
 }
 
 function fingerprintDistance(a, b) {
   if (!a || !b || a.length !== b.length) return 1;
+
   let sum = 0;
-  for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i]);
+  for (let i = 0; i < a.length; i++) {
+    sum += Math.abs(a[i] - b[i]);
+  }
+
   return sum / (a.length * 255);
 }
 
 function changeThresholds() {
   switch (els.changeSensitivity.value) {
-    case 'high': return { changed: 0.010, stable: 0.007 };
-    case 'low': return { changed: 0.032, stable: 0.014 };
-    default: return { changed: 0.018, stable: 0.010 };
+    case 'high':
+      return { changed: 0.010, stable: 0.007 };
+    case 'low':
+      return { changed: 0.032, stable: 0.014 };
+    default:
+      return { changed: 0.018, stable: 0.010 };
   }
 }
 
 async function checkDisplayChange() {
-  if (!loggingActive || els.recordMode.value !== 'change' || isReading || changeCheckBusy) return;
+  if (!loggingActive || els.recordMode.value !== 'change' || isReading || changeCheckBusy) {
+    return;
+  }
+
   changeCheckBusy = true;
 
   try {
     const fp = captureFingerprint();
+
     if (!changeBaseline) {
       changeBaseline = fp;
       return;
@@ -275,7 +395,7 @@ async function checkDisplayChange() {
       return;
     }
 
-    changeCandidateCount++;
+    changeCandidateCount += 1;
     changeCandidate = fp;
 
     if (changeCandidateCount >= 3) {
@@ -300,11 +420,16 @@ function buildAdaptiveBinary(srcCanvas) {
   const gray = new Uint8Array(w * h);
 
   for (let p = 0, i = 0; p < gray.length; p++, i += 4) {
-    gray[p] = Math.round(0.299 * src.data[i] + 0.587 * src.data[i+1] + 0.114 * src.data[i+2]);
+    gray[p] = Math.round(
+      0.299 * src.data[i] +
+      0.587 * src.data[i + 1] +
+      0.114 * src.data[i + 2]
+    );
   }
 
   const iw = w + 1;
   const integral = new Uint32Array((w + 1) * (h + 1));
+
   for (let y = 1; y <= h; y++) {
     let rowSum = 0;
     for (let x = 1; x <= w; x++) {
@@ -321,6 +446,7 @@ function buildAdaptiveBinary(srcCanvas) {
   for (let y = 0; y < h; y++) {
     const y0 = Math.max(0, y - radius);
     const y1 = Math.min(h - 1, y + radius);
+
     for (let x = 0; x < w; x++) {
       const x0 = Math.max(0, x - radius);
       const x1 = Math.min(w - 1, x + radius);
@@ -331,12 +457,15 @@ function buildAdaptiveBinary(srcCanvas) {
       const area = (x1 - x0 + 1) * (y1 - y0 + 1);
       const mean = (D - B - C + A) / area;
       const isInk = gray[y * w + x] < mean - offset;
+
       binary[y * w + x] = isInk ? 1 : 0;
 
       const oi = (y * w + x) * 4;
       const v = isInk ? 0 : 255;
-      out[oi] = out[oi+1] = out[oi+2] = v;
-      out[oi+3] = 255;
+      out[oi] = v;
+      out[oi + 1] = v;
+      out[oi + 2] = v;
+      out[oi + 3] = 255;
     }
   }
 
@@ -351,16 +480,23 @@ function findDecimalAndDigitGroups(binary, w, h) {
   for (let y = yTop; y < yBottom; y++) {
     const row = y * w;
     for (let x = 0; x < w; x++) {
-      if (binary[row + x]) columnCounts[x]++;
+      if (binary[row + x]) {
+        columnCounts[x] += 1;
+      }
     }
   }
 
   const minDigitInk = Math.max(5, Math.floor((yBottom - yTop) * 0.08));
   const rawGroups = [];
   let start = -1;
+
   for (let x = 0; x <= w; x++) {
     const active = x < w && columnCounts[x] >= minDigitInk;
-    if (active && start < 0) start = x;
+
+    if (active && start < 0) {
+      start = x;
+    }
+
     if (!active && start >= 0) {
       rawGroups.push([start, x - 1]);
       start = -1;
@@ -369,13 +505,19 @@ function findDecimalAndDigitGroups(binary, w, h) {
 
   const gapJoin = Math.max(6, Math.floor(h * 0.035));
   const merged = [];
-  for (const g of rawGroups) {
+
+  for (const group of rawGroups) {
     const prev = merged[merged.length - 1];
-    if (prev && g[0] - prev[1] <= gapJoin) prev[1] = g[1];
-    else merged.push([...g]);
+    if (prev && group[0] - prev[1] <= gapJoin) {
+      prev[1] = group[1];
+    } else {
+      merged.push([...group]);
+    }
   }
 
-  const digitGroups = merged.filter(g => (g[1] - g[0] + 1) >= Math.max(8, h * 0.035));
+  const digitGroups = merged.filter(
+    group => (group[1] - group[0] + 1) >= Math.max(8, h * 0.035)
+  );
 
   const visited = new Uint8Array(w * h);
   const candidates = [];
@@ -388,6 +530,7 @@ function findDecimalAndDigitGroups(binary, w, h) {
 
       const stack = [idx];
       visited[idx] = 1;
+
       let area = 0;
       let minX = x;
       let maxX = x;
@@ -398,18 +541,23 @@ function findDecimalAndDigitGroups(binary, w, h) {
         const cur = stack.pop();
         const cy = Math.floor(cur / w);
         const cx = cur - cy * w;
-        area++;
-        if (cx < minX) minX = cx;
-        if (cx > maxX) maxX = cx;
-        if (cy < minY) minY = cy;
-        if (cy > maxY) maxY = cy;
+
+        area += 1;
+        minX = Math.min(minX, cx);
+        maxX = Math.max(maxX, cx);
+        minY = Math.min(minY, cy);
+        maxY = Math.max(maxY, cy);
 
         const neighbors = [cur - 1, cur + 1, cur - w, cur + w];
+
         for (const n of neighbors) {
           if (n < 0 || n >= w * h || visited[n] || !binary[n]) continue;
+
           const ny = Math.floor(n / w);
           const nx = n - ny * w;
+
           if (Math.abs(nx - cx) + Math.abs(ny - cy) !== 1) continue;
+
           visited[n] = 1;
           stack.push(n);
         }
@@ -417,15 +565,16 @@ function findDecimalAndDigitGroups(binary, w, h) {
 
       const bw = maxX - minX + 1;
       const bh = maxY - minY + 1;
-      const boxArea = bw * bh;
-      const density = area / boxArea;
+      const density = area / (bw * bh);
       const relH = bh / h;
       const relW = bw / w;
 
       if (
         area >= Math.max(15, w * h * 0.00008) &&
-        relH >= 0.025 && relH <= 0.18 &&
-        relW >= 0.008 && relW <= 0.10 &&
+        relH >= 0.025 &&
+        relH <= 0.18 &&
+        relW >= 0.008 &&
+        relW <= 0.10 &&
         density >= 0.25 &&
         maxY / h >= 0.60
       ) {
@@ -433,21 +582,26 @@ function findDecimalAndDigitGroups(binary, w, h) {
           x: (minX + maxX) / 2,
           y: (minY + maxY) / 2,
           area,
-          density,
-          bw,
-          bh
+          density
         });
       }
     }
   }
 
-  candidates.sort((a, b) => (b.area * b.density) - (a.area * a.density));
-  const decimal = candidates.find(c => c.x > w * 0.08 && c.x < w * 0.92) || null;
+  candidates.sort(
+    (a, b) => (b.area * b.density) - (a.area * a.density)
+  );
+
+  const decimal = candidates.find(
+    candidate => candidate.x > w * 0.08 && candidate.x < w * 0.92
+  ) || null;
+
   return { decimal, digitGroups };
 }
 
 function renderOcrCanvas(pre) {
   const pad = Math.round(Math.max(30, pre.h * 0.12));
+
   els.ocrCanvas.width = pre.w + pad * 2;
   els.ocrCanvas.height = pre.h + pad * 2;
 
@@ -459,6 +613,7 @@ function renderOcrCanvas(pre) {
   els.debugCanvas.width = els.ocrCanvas.width;
   els.debugCanvas.height = els.ocrCanvas.height;
   els.debugCanvas.getContext('2d').drawImage(els.ocrCanvas, 0, 0);
+
   return els.ocrCanvas;
 }
 
@@ -475,24 +630,39 @@ function parseValue(text) {
   if (!cleaned) return null;
 
   const firstDot = cleaned.indexOf('.');
+
   if (firstDot >= 0) {
-    cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+    cleaned =
+      cleaned.slice(0, firstDot + 1) +
+      cleaned.slice(firstDot + 1).replace(/\./g, '');
   }
 
-  if (!/^\d{1,6}(\.\d{1,3})?$/.test(cleaned)) return null;
+  if (!/^\d{1,6}(\.\d{1,3})?$/.test(cleaned)) {
+    return null;
+  }
+
   const value = Number(cleaned);
-  if (!Number.isFinite(value) || value < 0 || value > 999999) return null;
+
+  if (!Number.isFinite(value) || value < 0 || value > 999999) {
+    return null;
+  }
+
   return { value, normalized: cleaned };
 }
 
 function formatFixedDecimals(digits, places) {
   const safeDigits = digits.replace(/\D/g, '');
   if (!safeDigits) return null;
-  if (places === 0) return String(Number(safeDigits));
+
+  if (places === 0) {
+    return String(Number(safeDigits));
+  }
 
   const padded = safeDigits.padStart(places + 1, '0');
   const splitAt = padded.length - places;
-  const whole = padded.slice(0, splitAt).replace(/^0+(?=\d)/, '') || '0';
+  const whole =
+    padded.slice(0, splitAt).replace(/^0+(?=\d)/, '') || '0';
+
   return `${whole}.${padded.slice(splitAt)}`;
 }
 
@@ -505,35 +675,48 @@ function applyDecimalPolicy(parsed, rawText, decimalInfo) {
   if (policy !== 'auto') {
     const places = Number(policy);
     const normalized = formatFixedDecimals(digits, places);
+
     if (!normalized) return null;
+
     const value = Number(normalized);
     if (!Number.isFinite(value)) return null;
+
     return {
       value,
       normalized,
-      decimalRecovered: places > 0 && !normalizeText(rawText).includes('.'),
       decimalFixed: true
     };
   }
 
-  if (parsed?.normalized?.includes('.')) return parsed;
-  if (!decimalInfo?.decimal || !digits || digits.length < 2) return parsed;
+  if (parsed?.normalized?.includes('.')) {
+    return parsed;
+  }
+
+  if (!decimalInfo?.decimal || !digits || digits.length < 2) {
+    return parsed;
+  }
 
   const groups = decimalInfo.digitGroups;
   const dotX = decimalInfo.decimal.x;
   let insertAt = -1;
 
   if (groups.length === digits.length) {
-    const centers = groups.map(g => (g[0] + g[1]) / 2);
+    const centers = groups.map(group => (group[0] + group[1]) / 2);
     insertAt = centers.filter(x => x < dotX).length;
   }
 
-  if (insertAt <= 0 || insertAt >= digits.length) return parsed;
+  if (insertAt <= 0 || insertAt >= digits.length) {
+    return parsed;
+  }
 
-  const recovered = `${digits.slice(0, insertAt)}.${digits.slice(insertAt)}`;
-  const value = Number(recovered);
-  if (!Number.isFinite(value)) return parsed;
-  return { value, normalized: recovered, decimalRecovered: true };
+  const recovered =
+    `${digits.slice(0, insertAt)}.${digits.slice(insertAt)}`;
+
+  return {
+    value: Number(recovered),
+    normalized: recovered,
+    decimalRecovered: true
+  };
 }
 
 async function recognizeCanvas(canvas, decimalInfo) {
@@ -547,6 +730,7 @@ async function recognizeCanvas(canvas, decimalInfo) {
 
   if (!parsed) {
     const digitsOnly = normalizeText(raw).replace(/\D/g, '');
+
     if (/^\d{1,7}$/.test(digitsOnly)) {
       parsed = applyDecimalPolicy(
         { value: Number(digitsOnly), normalized: digitsOnly },
@@ -559,8 +743,190 @@ async function recognizeCanvas(canvas, decimalInfo) {
   return { raw, confidence, parsed };
 }
 
+function ensureTableRow(index) {
+  while (tableRows.length <= index) {
+    tableRows.push(Array(tableColumns.length).fill(''));
+  }
+
+  return tableRows[index];
+}
+
+function writeTableCell(content) {
+  ensureSchema();
+
+  if (!tableColumns.length) {
+    tableColumns = ['測定1', '測定2', '測定3'];
+  }
+
+  const row = ensureTableRow(tableCursorRow);
+  row[tableCursorCol] = String(content ?? '');
+
+  tableCursorCol += 1;
+
+  if (tableCursorCol >= tableColumns.length) {
+    tableCursorRow += 1;
+    tableCursorCol = 0;
+  }
+
+  updateTargetLine();
+  renderPreview();
+  updateCsvState();
+}
+
+function addLogRow(row) {
+  ensureSchema();
+  logRows.push(row);
+  renderPreview();
+  updateCsvState();
+}
+
+function addMeasurement(timestamp, value, status) {
+  ensureSchema();
+
+  if (lockedFormat === 'table') {
+    if (!value) return;
+    writeTableCell(value);
+  } else {
+    addLogRow({
+      kind: 'measurement',
+      timestamp,
+      value,
+      unit: els.unit.value,
+      status,
+      note: ''
+    });
+  }
+
+  if (value) {
+    measurementCount += 1;
+    els.recordCount.textContent = String(measurementCount);
+  }
+
+  els.lastTime.textContent = timeOnly(timestamp);
+}
+
+function insertTextEntry() {
+  const text = els.noteText.value;
+  if (!text) return;
+
+  ensureSchema();
+
+  if (lockedFormat === 'table') {
+    writeTableCell(text);
+  } else {
+    addLogRow({
+      kind: 'note',
+      timestamp: nowIsoLocal(),
+      value: '',
+      unit: '',
+      status: 'NOTE',
+      note: text
+    });
+  }
+
+  els.noteText.value = '';
+}
+
+function insertNewRow() {
+  ensureSchema();
+
+  if (lockedFormat === 'table') {
+    ensureTableRow(tableCursorRow);
+    tableCursorRow += 1;
+    tableCursorCol = 0;
+    updateTargetLine();
+    renderPreview();
+    updateCsvState();
+  } else {
+    addLogRow({ kind: 'blank' });
+  }
+}
+
+function renderPreview() {
+  els.previewTable.textContent = '';
+
+  if (!schemaLocked) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.textContent = '最初の記録時に出力形式が確定します。';
+    tr.append(td);
+    els.previewTable.append(tr);
+    return;
+  }
+
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+
+  if (lockedFormat === 'log') {
+    for (const header of ['timestamp', 'value', 'unit', 'status', 'note']) {
+      const th = document.createElement('th');
+      th.textContent = header;
+      headRow.append(th);
+    }
+
+    thead.append(headRow);
+    els.previewTable.append(thead);
+
+    const tbody = document.createElement('tbody');
+
+    for (const row of logRows) {
+      const tr = document.createElement('tr');
+
+      if (row.kind === 'blank') {
+        const td = document.createElement('td');
+        td.colSpan = 5;
+        td.innerHTML = '&nbsp;';
+        tr.append(td);
+      } else {
+        for (const value of [
+          row.timestamp,
+          row.value,
+          row.unit,
+          row.status,
+          row.note
+        ]) {
+          const td = document.createElement('td');
+          td.textContent = value ?? '';
+          tr.append(td);
+        }
+      }
+
+      tbody.append(tr);
+    }
+
+    els.previewTable.append(tbody);
+    return;
+  }
+
+  for (const header of tableColumns) {
+    const th = document.createElement('th');
+    th.textContent = header;
+    headRow.append(th);
+  }
+
+  thead.append(headRow);
+  els.previewTable.append(thead);
+
+  const tbody = document.createElement('tbody');
+
+  for (const row of tableRows) {
+    const tr = document.createElement('tr');
+
+    for (let i = 0; i < tableColumns.length; i++) {
+      const td = document.createElement('td');
+      td.textContent = row[i] ?? '';
+      tr.append(td);
+    }
+
+    tbody.append(tr);
+  }
+
+  els.previewTable.append(tbody);
+}
+
 async function readOnce({ save = true } = {}) {
   if (isReading) return;
+
   isReading = true;
   els.singleBtn.disabled = true;
 
@@ -569,39 +935,65 @@ async function readOnce({ save = true } = {}) {
 
     const src = captureRoi();
     const pre = buildAdaptiveBinary(src);
-    const decimalInfo = findDecimalAndDigitGroups(pre.binary, pre.w, pre.h);
+    const decimalInfo = findDecimalAndDigitGroups(
+      pre.binary,
+      pre.w,
+      pre.h
+    );
     const ocrCanvas = renderOcrCanvas(pre);
-
     const result = await recognizeCanvas(ocrCanvas, decimalInfo);
     const ts = nowIsoLocal();
 
     els.confidence.textContent = `${Math.round(result.confidence)}%`;
+
     const decimalInfoText = result.parsed?.decimalFixed
       ? ` / 小数${els.decimalPlaces.value}桁固定`
       : result.parsed?.decimalRecovered
         ? ' / 小数点補正'
         : '';
 
-    els.ocrText.textContent = `OCR原文: ${JSON.stringify(result.raw.trim())}${decimalInfoText}`;
+    els.ocrText.textContent =
+      `OCR原文: ${JSON.stringify(result.raw.trim())}${decimalInfoText}`;
 
     if (result.parsed) {
       els.currentValue.textContent = result.parsed.normalized;
+
       const lowConfidence = result.confidence < 35;
-      const resultStatus = lowConfidence ? 'LOW_CONFIDENCE' : 'OK';
-      setStatus(loggingActive && els.recordMode.value === 'change'
-        ? `${resultStatus} / 変化監視中`
-        : resultStatus);
-      if (save) addMeasurement(ts, result.parsed.normalized, resultStatus);
+      const resultStatus = lowConfidence
+        ? 'LOW_CONFIDENCE'
+        : 'OK';
+
+      setStatus(
+        loggingActive && els.recordMode.value === 'change'
+          ? `${resultStatus} / 変化監視中`
+          : resultStatus
+      );
+
+      if (save) {
+        addMeasurement(
+          ts,
+          result.parsed.normalized,
+          resultStatus
+        );
+      }
     } else {
-      setStatus(loggingActive && els.recordMode.value === 'change'
-        ? 'OCR_ERROR / 変化監視中'
-        : 'OCR_ERROR');
-      if (save) addMeasurement(ts, '', 'OCR_ERROR');
+      setStatus(
+        loggingActive && els.recordMode.value === 'change'
+          ? 'OCR_ERROR / 変化監視中'
+          : 'OCR_ERROR'
+      );
+
+      if (save && (schemaLocked ? lockedFormat : els.outputFormat.value) === 'log') {
+        addMeasurement(ts, '', 'OCR_ERROR');
+      }
     }
   } catch (err) {
     console.error(err);
     setStatus('ERROR');
-    if (save) addMeasurement(nowIsoLocal(), '', 'ERROR');
+
+    if (save && (schemaLocked ? lockedFormat : els.outputFormat.value) === 'log') {
+      addMeasurement(nowIsoLocal(), '', 'ERROR');
+    }
   } finally {
     isReading = false;
     els.singleBtn.disabled = !stream;
@@ -609,78 +1001,15 @@ async function readOnce({ save = true } = {}) {
   }
 }
 
-function renderEntry(entry) {
-  const tr = document.createElement('tr');
-
-  if (entry.type === 'measurement') {
-    const t1 = document.createElement('td');
-    const t2 = document.createElement('td');
-    const t3 = document.createElement('td');
-    t1.textContent = timeOnly(entry.timestamp);
-    t2.textContent = entry.value || '—';
-    t3.textContent = entry.status;
-    tr.append(t1, t2, t3);
-  } else if (entry.type === 'text') {
-    tr.className = 'note-row';
-    const td = document.createElement('td');
-    td.colSpan = 3;
-    td.textContent = `文字列: ${entry.text}`;
-    tr.append(td);
-  } else {
-    tr.className = 'blank-row';
-    const td = document.createElement('td');
-    td.colSpan = 3;
-    td.textContent = '（CSV空行）';
-    tr.append(td);
-  }
-
-  els.logBody.prepend(tr);
-}
-
-function refreshCsvState() {
-  els.csvBtn.disabled = entries.length === 0;
-}
-
-function addMeasurement(timestamp, value, status) {
-  const entry = {
-    type: 'measurement',
-    timestamp,
-    value,
-    unit: els.unit.value,
-    status
-  };
-  entries.push(entry);
-  measurementCount++;
-  els.recordCount.textContent = String(measurementCount);
-  els.lastTime.textContent = timeOnly(timestamp);
-  renderEntry(entry);
-  refreshCsvState();
-}
-
-function insertTextEntry() {
-  const text = els.noteText.value;
-  if (!text.trim()) return;
-  const entry = { type: 'text', text };
-  entries.push(entry);
-  renderEntry(entry);
-  els.noteText.value = '';
-  refreshCsvState();
-}
-
-function insertBlankEntry() {
-  const entry = { type: 'blank' };
-  entries.push(entry);
-  renderEntry(entry);
-  refreshCsvState();
-}
-
 async function startLogging() {
   if (loggingActive || !stream) return;
 
+  ensureSchema();
   loggingActive = true;
   els.startBtn.disabled = true;
   els.stopBtn.disabled = false;
   lockMeasurementControls(true);
+  els.settingsDetails.open = false;
 
   if (els.recordMode.value === 'change') {
     changeBaseline = captureFingerprint();
@@ -693,81 +1022,137 @@ async function startLogging() {
   } else {
     const sec = Number(els.intervalSec.value);
     setStatus('連続記録中');
+
     await readOnce({ save: true });
-    timer = setInterval(() => readOnce({ save: true }), sec * 1000);
+    timer = setInterval(
+      () => readOnce({ save: true }),
+      sec * 1000
+    );
   }
 }
 
 function stopLogging() {
-  if (timer) clearInterval(timer);
+  if (timer) {
+    clearInterval(timer);
+  }
+
   timer = null;
   loggingActive = false;
   changeBaseline = null;
   changeCandidate = null;
   changeCandidateCount = 0;
+
   els.startBtn.disabled = !stream;
   els.stopBtn.disabled = true;
+
   lockMeasurementControls(false);
-  updateModeUi();
+
+  if (schemaLocked) {
+    els.outputFormat.disabled = true;
+    els.tableHeaders.disabled = true;
+  }
+
+  updateSettingsUi();
   setStatus('停止');
 }
 
-function csvEscape(v) {
-  const s = String(v ?? '');
-  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+function csvEscape(value) {
+  const s = String(value ?? '');
+  return /[",\r\n]/.test(s)
+    ? `"${s.replace(/"/g, '""')}"`
+    : s;
 }
 
 function downloadCsv() {
-  const lines = ['timestamp,value,unit,status'];
+  if (!schemaLocked) return;
 
-  for (const entry of entries) {
-    if (entry.type === 'measurement') {
+  const lines = [];
+
+  if (lockedFormat === 'log') {
+    lines.push('timestamp,value,unit,status,note');
+
+    for (const row of logRows) {
+      if (row.kind === 'blank') {
+        lines.push('');
+        continue;
+      }
+
       lines.push([
-        entry.timestamp,
-        entry.value,
-        entry.unit,
-        entry.status
+        row.timestamp,
+        row.value,
+        row.unit,
+        row.status,
+        row.note
       ].map(csvEscape).join(','));
-    } else if (entry.type === 'text') {
-      lines.push(csvEscape(entry.text));
-    } else if (entry.type === 'blank') {
-      lines.push('');
+    }
+  } else {
+    lines.push(tableColumns.map(csvEscape).join(','));
+
+    for (const row of tableRows) {
+      lines.push(
+        tableColumns
+          .map((_, index) => csvEscape(row[index] ?? ''))
+          .join(',')
+      );
     }
   }
 
   const csv = '\uFEFF' + lines.join('\r\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob(
+    [csv],
+    { type: 'text/csv;charset=utf-8' }
+  );
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const d = new Date();
   const pad = n => String(n).padStart(2, '0');
 
-  a.download = `swt-log-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.csv`;
+  a.download =
+    `swt-log-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.csv`;
+
   a.href = url;
   document.body.appendChild(a);
   a.click();
   a.remove();
+
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+els.outputFormat.addEventListener('change', updateSettingsUi);
+els.recordMode.addEventListener('change', updateSettingsUi);
+
+[els.roiW, els.roiH, els.roiY].forEach(input => {
+  input.addEventListener('input', updateRoi);
+});
+
+els.unit.addEventListener('change', () => {
+  els.currentUnit.textContent = els.unit.value;
+});
+
+els.tableHeaders.addEventListener('input', updateTargetLine);
 els.startCameraBtn.addEventListener('click', startCamera);
 els.flipBtn.addEventListener('click', startCamera);
 els.singleBtn.addEventListener('click', () => readOnce({ save: true }));
 els.startBtn.addEventListener('click', startLogging);
 els.stopBtn.addEventListener('click', stopLogging);
 els.insertTextBtn.addEventListener('click', insertTextEntry);
-els.insertBlankBtn.addEventListener('click', insertBlankEntry);
+els.newRowBtn.addEventListener('click', insertNewRow);
 els.csvBtn.addEventListener('click', downloadCsv);
 
-els.noteText.addEventListener('keydown', event => {
-  if (event.key === 'Enter') insertTextEntry();
-});
-
 window.addEventListener('beforeunload', () => {
-  if (timer) clearInterval(timer);
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  if (worker) worker.terminate();
+  if (timer) {
+    clearInterval(timer);
+  }
+
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+  }
+
+  if (worker) {
+    worker.terminate();
+  }
 });
 
 updateRoi();
-updateModeUi();
+updateSettingsUi();
+renderPreview();
