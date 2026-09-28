@@ -1,7 +1,19 @@
 const els = {
   video: document.querySelector('#video'),
   roi: document.querySelector('#roi'),
-  outputSettings: document.querySelector('#outputSettings'),
+  cameraWrap: document.querySelector('#cameraWrap'),
+
+  settingsBtn: document.querySelector('#settingsBtn'),
+  settingsModal: document.querySelector('#settingsModal'),
+  settingsCloseBtn: document.querySelector('#settingsCloseBtn'),
+  settingsRunningNote: document.querySelector('#settingsRunningNote'),
+
+  readMode: document.querySelector('#readMode'),
+  autoTriggerField: document.querySelector('#autoTriggerField'),
+  autoTrigger: document.querySelector('#autoTrigger'),
+  intervalField: document.querySelector('#intervalField'),
+  intervalSec: document.querySelector('#intervalSec'),
+
   outputMode: document.querySelector('#outputMode'),
   tableSettings: document.querySelector('#tableSettings'),
   fixedColumns: document.querySelector('#fixedColumns'),
@@ -20,27 +32,24 @@ const els = {
   cornerHeader: document.querySelector('#cornerHeader'),
   fillRuleHint: document.querySelector('#fillRuleHint'),
 
-  advancedSettings: document.querySelector('#advancedSettings'),
-  recordMode: document.querySelector('#recordMode'),
-  intervalField: document.querySelector('#intervalField'),
-  intervalSec: document.querySelector('#intervalSec'),
-  sensitivityField: document.querySelector('#sensitivityField'),
   changeSensitivity: document.querySelector('#changeSensitivity'),
   decimalPlaces: document.querySelector('#decimalPlaces'),
   unit: document.querySelector('#unit'),
 
+  roiAdjustBtn: document.querySelector('#roiAdjustBtn'),
+  roiAdjustPanel: document.querySelector('#roiAdjustPanel'),
+  roiAdjustCloseBtn: document.querySelector('#roiAdjustCloseBtn'),
+  roiX: document.querySelector('#roiX'),
+  roiY: document.querySelector('#roiY'),
   roiW: document.querySelector('#roiW'),
   roiH: document.querySelector('#roiH'),
-  roiY: document.querySelector('#roiY'),
+  roiXLabel: document.querySelector('#roiXLabel'),
+  roiYLabel: document.querySelector('#roiYLabel'),
   roiWLabel: document.querySelector('#roiWLabel'),
   roiHLabel: document.querySelector('#roiHLabel'),
-  roiYLabel: document.querySelector('#roiYLabel'),
 
-  startCameraBtn: document.querySelector('#startCameraBtn'),
-  flipBtn: document.querySelector('#flipBtn'),
-  singleBtn: document.querySelector('#singleBtn'),
-  startBtn: document.querySelector('#startBtn'),
-  stopBtn: document.querySelector('#stopBtn'),
+  cameraBtn: document.querySelector('#cameraBtn'),
+  readBtn: document.querySelector('#readBtn'),
   undoBtn: document.querySelector('#undoBtn'),
   shareBtn: document.querySelector('#shareBtn'),
   saveBtn: document.querySelector('#saveBtn'),
@@ -52,13 +61,15 @@ const els = {
   confidence: document.querySelector('#confidence'),
   recordCount: document.querySelector('#recordCount'),
   lastTime: document.querySelector('#lastTime'),
-  undoHint: document.querySelector('#undoHint'),
+  exportSummary: document.querySelector('#exportSummary'),
+
+  recentBody: document.querySelector('#recentBody'),
+  previewTable: document.querySelector('#previewTable'),
 
   ocrMiniText: document.querySelector('#ocrMiniText'),
   ocrProgress: document.querySelector('#ocrProgress'),
   ocrText: document.querySelector('#ocrText'),
   debugCanvas: document.querySelector('#debugCanvas'),
-  previewTable: document.querySelector('#previewTable'),
 
   captureCanvas: document.querySelector('#captureCanvas'),
   ocrCanvas: document.querySelector('#ocrCanvas'),
@@ -74,19 +85,7 @@ let changeBaseline = null;
 let changeCandidate = null;
 let changeCandidateCount = 0;
 
-let schemaLocked = false;
-let config = null;
-let tableComplete = false;
-
-const simpleValues = [];
-const tableData = [];
-const history = [];
-
-let cursorRow = 0;
-let cursorCol = 0;
-let usedMaxRow = -1;
-let usedMaxCol = -1;
-
+const measurements = [];
 const changeCanvas = document.createElement('canvas');
 changeCanvas.width = 96;
 changeCanvas.height = 32;
@@ -122,19 +121,8 @@ function timeOnly(timestamp) {
   return timestamp ? timestamp.slice(11) : '--:--:--';
 }
 
-function updateRoi() {
-  els.roi.style.width = `${els.roiW.value}%`;
-  els.roi.style.height = `${els.roiH.value}%`;
-  els.roi.style.top = `${els.roiY.value}%`;
-  els.roiWLabel.textContent = `${els.roiW.value}%`;
-  els.roiHLabel.textContent = `${els.roiH.value}%`;
-  els.roiYLabel.textContent = `${els.roiY.value}%`;
-}
-
-function readConfigFromUi() {
-  const mode = els.outputMode.value;
-
-  if (mode === 'simple') {
+function readConfig() {
+  if (els.outputMode.value === 'simple') {
     return { mode: 'simple' };
   }
 
@@ -161,13 +149,9 @@ function readConfigFromUi() {
   };
 }
 
-function getActiveConfig() {
-  return schemaLocked ? config : readConfigFromUi();
-}
-
-function getColumnLabel(index, cfg = getActiveConfig()) {
+function getColumnLabel(index, cfg = readConfig()) {
   if (cfg.mode !== 'table' || cfg.columnHeaderMode === 'none') {
-    return `列${index + 1}`;
+    return String(index + 1);
   }
 
   if (cfg.columnHeaderMode === 'custom') {
@@ -177,9 +161,9 @@ function getColumnLabel(index, cfg = getActiveConfig()) {
   return String(index + 1);
 }
 
-function getRowLabel(index, cfg = getActiveConfig()) {
+function getRowLabel(index, cfg = readConfig()) {
   if (cfg.mode !== 'table' || cfg.rowHeaderMode === 'none') {
-    return `行${index + 1}`;
+    return String(index + 1);
   }
 
   if (cfg.rowHeaderMode === 'custom') {
@@ -189,67 +173,124 @@ function getRowLabel(index, cfg = getActiveConfig()) {
   return String(index + 1);
 }
 
+function positionForIndex(index, cfg = readConfig()) {
+  if (cfg.mode === 'simple') {
+    return { row: 0, col: index };
+  }
+
+  if (cfg.fixedColumns) {
+    return {
+      row: Math.floor(index / cfg.columnCount),
+      col: index % cfg.columnCount,
+    };
+  }
+
+  if (cfg.fixedRows) {
+    return {
+      row: index % cfg.rowCount,
+      col: Math.floor(index / cfg.rowCount),
+    };
+  }
+
+  return { row: 0, col: index };
+}
+
+function tableCapacity(cfg = readConfig()) {
+  if (
+    cfg.mode === 'table' &&
+    cfg.fixedColumns &&
+    cfg.fixedRows
+  ) {
+    return cfg.columnCount * cfg.rowCount;
+  }
+
+  return Infinity;
+}
+
+function outputIsFull(cfg = readConfig()) {
+  return measurements.length >= tableCapacity(cfg);
+}
+
 function updateOutputSettingsUi() {
-  const cfg = readConfigFromUi();
+  const cfg = readConfig();
   const tableMode = cfg.mode === 'table';
 
   els.tableSettings.classList.toggle('hidden-field', !tableMode);
 
-  if (!tableMode) {
-    els.fillRuleHint.textContent = '';
-    updateTargetLine();
-    return;
+  if (tableMode) {
+    els.columnCountField.classList.toggle(
+      'hidden-field',
+      !cfg.fixedColumns
+    );
+
+    els.rowCountField.classList.toggle(
+      'hidden-field',
+      !cfg.fixedRows
+    );
+
+    els.columnHeadersField.classList.toggle(
+      'hidden-field',
+      cfg.columnHeaderMode !== 'custom'
+    );
+
+    els.rowHeadersField.classList.toggle(
+      'hidden-field',
+      cfg.rowHeaderMode !== 'custom'
+    );
+
+    const showCorner =
+      cfg.columnHeaderMode !== 'none' &&
+      cfg.rowHeaderMode !== 'none';
+
+    els.cornerHeaderField.classList.toggle(
+      'hidden-field',
+      !showCorner
+    );
+
+    if (cfg.fixedColumns && cfg.fixedRows) {
+      els.fillRuleHint.textContent =
+        `左→右に記録し、${cfg.columnCount}列ごとに次の行へ進みます。最大 ${cfg.columnCount}列 × ${cfg.rowCount}行です。`;
+    } else if (cfg.fixedColumns) {
+      els.fillRuleHint.textContent =
+        `左→右に記録し、${cfg.columnCount}列ごとに次の行へ進みます。行数は自動で増えます。`;
+    } else if (cfg.fixedRows) {
+      els.fillRuleHint.textContent =
+        `上→下に記録し、${cfg.rowCount}行ごとに次の列へ進みます。列数は自動で増えます。`;
+    } else {
+      els.fillRuleHint.textContent =
+        '列数・行数とも未指定の場合は、1行のまま右方向へ追加します。';
+    }
   }
 
-  els.columnCountField.classList.toggle('hidden-field', !cfg.fixedColumns);
-  els.rowCountField.classList.toggle('hidden-field', !cfg.fixedRows);
-  els.columnHeadersField.classList.toggle(
-    'hidden-field',
-    cfg.columnHeaderMode !== 'custom'
-  );
-  els.rowHeadersField.classList.toggle(
-    'hidden-field',
-    cfg.rowHeaderMode !== 'custom'
-  );
-
-  const showCorner =
-    cfg.columnHeaderMode !== 'none' &&
-    cfg.rowHeaderMode !== 'none';
-
-  els.cornerHeaderField.classList.toggle('hidden-field', !showCorner);
-
-  if (cfg.fixedColumns && cfg.fixedRows) {
-    els.fillRuleHint.textContent =
-      `左→右に記録し、${cfg.columnCount}列ごとに次の行へ進みます。最大 ${cfg.columnCount}列 × ${cfg.rowCount}行で完了します。`;
-  } else if (cfg.fixedColumns) {
-    els.fillRuleHint.textContent =
-      `左→右に記録し、${cfg.columnCount}列ごとに次の行へ進みます。行数は自動で増えます。`;
-  } else if (cfg.fixedRows) {
-    els.fillRuleHint.textContent =
-      `上→下に記録し、${cfg.rowCount}行ごとに次の列へ進みます。列数は自動で増えます。`;
-  } else {
-    els.fillRuleHint.textContent =
-      '列数・行数とも未指定の場合は、1行のまま右方向へ追加します。';
-  }
-
-  updateTargetLine();
-  renderPreview();
+  updateDerivedUi();
 }
 
-function updateAdvancedUi() {
-  const changeMode = els.recordMode.value === 'change';
-  els.intervalField.classList.toggle('hidden-field', changeMode);
-  els.sensitivityField.classList.toggle('hidden-field', !changeMode);
-  els.startBtn.textContent = changeMode ? '監視開始' : '連続記録開始';
+function updateReadSettingsUi() {
+  const auto = els.readMode.value === 'auto';
+
+  els.autoTriggerField.classList.toggle(
+    'hidden-field',
+    !auto
+  );
+
+  els.intervalField.classList.toggle(
+    'hidden-field',
+    !auto || els.autoTrigger.value !== 'interval'
+  );
+
+  updatePrimaryButtons();
 }
 
-function lockSchema() {
-  if (schemaLocked) return;
+function setSettingsLocked(locked) {
+  els.settingsRunningNote.classList.toggle(
+    'hidden-field',
+    !locked
+  );
 
-  config = readConfigFromUi();
-  schemaLocked = true;
-
-  const controls = [
+  [
+    els.readMode,
+    els.autoTrigger,
+    els.intervalSec,
     els.outputMode,
     els.fixedColumns,
     els.columnCount,
@@ -260,168 +301,330 @@ function lockSchema() {
     els.rowHeaderMode,
     els.rowHeaders,
     els.cornerHeader,
-  ];
-
-  controls.forEach(control => {
-    control.disabled = true;
-  });
-
-  cursorRow = 0;
-  cursorCol = 0;
-  tableComplete = false;
-  updateTargetLine();
-  renderPreview();
-}
-
-function unlockAdvancedControls(locked) {
-  [
-    els.recordMode,
-    els.intervalSec,
     els.changeSensitivity,
     els.decimalPlaces,
     els.unit,
-    els.roiW,
-    els.roiH,
-    els.roiY,
   ].forEach(control => {
     control.disabled = locked;
   });
 }
 
-function describeTarget(row = cursorRow, col = cursorCol) {
-  const cfg = getActiveConfig();
+function updateRoi() {
+  const x = Number(els.roiX.value);
+  const y = Number(els.roiY.value);
+  const w = Number(els.roiW.value);
+  const h = Number(els.roiH.value);
+
+  els.roi.style.left = `${x}%`;
+  els.roi.style.top = `${y}%`;
+  els.roi.style.width = `${w}%`;
+  els.roi.style.height = `${h}%`;
+
+  els.roiXLabel.textContent = `${x}%`;
+  els.roiYLabel.textContent = `${y}%`;
+  els.roiWLabel.textContent = `${w}%`;
+  els.roiHLabel.textContent = `${h}%`;
+
+  if (
+    stream &&
+    loggingActive &&
+    els.readMode.value === 'auto' &&
+    els.autoTrigger.value === 'change'
+  ) {
+    try {
+      changeBaseline = captureFingerprint();
+      changeCandidate = null;
+      changeCandidateCount = 0;
+    } catch (err) {
+      console.debug('baseline reset skipped', err);
+    }
+  }
+}
+
+function currentTargetDescription() {
+  const cfg = readConfig();
+  const position = positionForIndex(measurements.length, cfg);
 
   if (cfg.mode === 'simple') {
-    return `CSV ${simpleValues.length + 1}番目`;
+    return `1行 / ${position.col + 1}列`;
   }
 
-  if (tableComplete) {
+  if (outputIsFull(cfg)) {
     return '表入力完了';
   }
 
-  const rowLabel = getRowLabel(row, cfg);
-  const colLabel = getColumnLabel(col, cfg);
+  const rowLabel = getRowLabel(position.row, cfg);
+  const colLabel = getColumnLabel(position.col, cfg);
 
-  return `${rowLabel} / ${colLabel}`;
+  return `${position.row + 1}行(${rowLabel}) / ${position.col + 1}列(${colLabel})`;
 }
 
-function updateTargetLine() {
-  els.targetLine.textContent = describeTarget();
-}
+function updatePrimaryButtons() {
+  const connected = Boolean(stream);
+  const auto = els.readMode.value === 'auto';
+  const full = outputIsFull();
 
-function getTableCell(row, col) {
-  return tableData[row]?.[col] ?? '';
-}
+  els.cameraBtn.textContent =
+    connected ? 'カメラ切断' : 'カメラ接続';
 
-function setTableCell(row, col, value) {
-  while (tableData.length <= row) {
-    tableData.push([]);
-  }
-
-  while (tableData[row].length <= col) {
-    tableData[row].push('');
-  }
-
-  tableData[row][col] = value;
-  usedMaxRow = Math.max(usedMaxRow, row);
-  usedMaxCol = Math.max(usedMaxCol, col);
-}
-
-function recomputeUsedBounds() {
-  usedMaxRow = -1;
-  usedMaxCol = -1;
-
-  for (let r = 0; r < tableData.length; r++) {
-    for (let c = 0; c < (tableData[r]?.length || 0); c++) {
-      if (String(tableData[r][c] ?? '') !== '') {
-        usedMaxRow = Math.max(usedMaxRow, r);
-        usedMaxCol = Math.max(usedMaxCol, c);
-      }
-    }
-  }
-}
-
-function advanceCursorAfterWrite() {
-  const cfg = config;
-
-  if (cfg.mode !== 'table') return;
-
-  if (cfg.fixedColumns) {
-    cursorCol += 1;
-
-    if (cursorCol >= cfg.columnCount) {
-      cursorCol = 0;
-      cursorRow += 1;
-    }
-
-    if (cfg.fixedRows && cursorRow >= cfg.rowCount) {
-      tableComplete = true;
-    }
-
+  if (!auto) {
+    els.readBtn.textContent = '撮影';
+    els.readBtn.classList.add('primary');
+    els.readBtn.classList.remove('danger');
+    els.readBtn.disabled =
+      !connected || isReading || full;
     return;
   }
 
-  if (cfg.fixedRows) {
-    cursorRow += 1;
+  els.readBtn.textContent =
+    loggingActive
+      ? '自動読み取り停止'
+      : '自動読み取り開始';
 
-    if (cursorRow >= cfg.rowCount) {
-      cursorRow = 0;
-      cursorCol += 1;
-    }
+  els.readBtn.classList.toggle(
+    'danger',
+    loggingActive
+  );
 
-    return;
-  }
+  els.readBtn.classList.toggle(
+    'primary',
+    !loggingActive
+  );
 
-  cursorCol += 1;
+  els.readBtn.disabled =
+    !connected || (!loggingActive && full);
 }
 
-function saveMeasurement(value, timestamp, status) {
-  lockSchema();
+function updateRecentLog() {
+  els.recentBody.textContent = '';
+  const cfg = readConfig();
 
-  if (config.mode === 'simple') {
-    const index = simpleValues.length;
-
-    simpleValues.push(value);
-
-    history.push({
-      kind: 'simple',
+  const recent = measurements
+    .map((record, index) => ({
+      record,
       index,
-      value,
-      timestamp,
-      status,
-      target: `CSV ${index + 1}番目`,
-    });
-  } else {
-    if (tableComplete) {
-      setStatus('表入力完了');
-      return false;
+      pos: positionForIndex(index, cfg),
+    }))
+    .slice(-5)
+    .reverse();
+
+  for (const item of recent) {
+    const tr = document.createElement('tr');
+
+    const values = [
+      timeOnly(item.record.timestamp),
+      item.pos.col + 1,
+      item.pos.row + 1,
+      item.record.value,
+    ];
+
+    for (const value of values) {
+      const td = document.createElement('td');
+      td.textContent = String(value);
+      tr.append(td);
     }
 
-    const row = cursorRow;
-    const col = cursorCol;
-    const previous = getTableCell(row, col);
-    const target = describeTarget(row, col);
-
-    setTableCell(row, col, value);
-
-    history.push({
-      kind: 'table',
-      row,
-      col,
-      previous,
-      value,
-      timestamp,
-      status,
-      target,
-    });
-
-    advanceCursorAfterWrite();
+    els.recentBody.append(tr);
   }
 
-  updateAfterDataChange();
+  for (let i = recent.length; i < 5; i++) {
+    const tr = document.createElement('tr');
+    tr.className = 'empty-row';
+    const td = document.createElement('td');
+    td.colSpan = 4;
+    td.textContent = '—';
+    tr.append(td);
+    els.recentBody.append(tr);
+  }
+}
 
-  if (tableComplete && loggingActive) {
-    stopLogging(true);
+function computeExportSize(cfg = readConfig()) {
+  if (cfg.mode !== 'table') {
+    return { rows: 1, cols: Math.max(measurements.length, 1) };
+  }
+
+  let maxRow = -1;
+  let maxCol = -1;
+
+  measurements.forEach((_, index) => {
+    const pos = positionForIndex(index, cfg);
+    maxRow = Math.max(maxRow, pos.row);
+    maxCol = Math.max(maxCol, pos.col);
+  });
+
+  const customRows =
+    cfg.rowHeaderMode === 'custom'
+      ? cfg.rowHeaders.length
+      : 0;
+
+  const customCols =
+    cfg.columnHeaderMode === 'custom'
+      ? cfg.columnHeaders.length
+      : 0;
+
+  const rows = cfg.fixedRows
+    ? Math.max(cfg.rowCount, maxRow + 1, 1)
+    : Math.max(maxRow + 1, customRows, 1);
+
+  const cols = cfg.fixedColumns
+    ? Math.max(cfg.columnCount, maxCol + 1, 1)
+    : Math.max(maxCol + 1, customCols, 1);
+
+  return { rows, cols };
+}
+
+function buildTableMatrix(cfg = readConfig()) {
+  const { rows, cols } = computeExportSize(cfg);
+  const matrix = Array.from(
+    { length: rows },
+    () => Array(cols).fill('')
+  );
+
+  measurements.forEach((record, index) => {
+    const pos = positionForIndex(index, cfg);
+
+    while (matrix.length <= pos.row) {
+      matrix.push(Array(cols).fill(''));
+    }
+
+    while (matrix[pos.row].length <= pos.col) {
+      matrix[pos.row].push('');
+    }
+
+    matrix[pos.row][pos.col] = record.value;
+  });
+
+  return matrix;
+}
+
+function renderTablePreview() {
+  els.previewTable.textContent = '';
+  const cfg = readConfig();
+
+  if (cfg.mode === 'simple') {
+    const tbody = document.createElement('tbody');
+    const tr = document.createElement('tr');
+
+    const count = Math.max(measurements.length + 1, 1);
+
+    for (let i = 0; i < count; i++) {
+      const td = document.createElement('td');
+      td.textContent = measurements[i]?.value ?? '';
+
+      if (i === measurements.length) {
+        td.classList.add('active-cell');
+      }
+
+      tr.append(td);
+    }
+
+    tbody.append(tr);
+    els.previewTable.append(tbody);
+    return;
+  }
+
+  const matrix = buildTableMatrix(cfg);
+  const { rows, cols } = computeExportSize(cfg);
+
+  if (cfg.columnHeaderMode !== 'none') {
+    const thead = document.createElement('thead');
+    const tr = document.createElement('tr');
+
+    if (cfg.rowHeaderMode !== 'none') {
+      const th = document.createElement('th');
+      th.textContent = cfg.cornerHeader || '';
+      tr.append(th);
+    }
+
+    for (let c = 0; c < cols; c++) {
+      const th = document.createElement('th');
+      th.textContent = getColumnLabel(c, cfg);
+      tr.append(th);
+    }
+
+    thead.append(tr);
+    els.previewTable.append(thead);
+  }
+
+  const next = positionForIndex(measurements.length, cfg);
+  const tbody = document.createElement('tbody');
+
+  for (let r = 0; r < rows; r++) {
+    const tr = document.createElement('tr');
+
+    if (cfg.rowHeaderMode !== 'none') {
+      const td = document.createElement('td');
+      td.textContent = getRowLabel(r, cfg);
+      td.classList.add('row-header');
+      tr.append(td);
+    }
+
+    for (let c = 0; c < cols; c++) {
+      const td = document.createElement('td');
+      td.textContent = matrix[r]?.[c] ?? '';
+
+      if (
+        !outputIsFull(cfg) &&
+        r === next.row &&
+        c === next.col
+      ) {
+        td.classList.add('active-cell');
+      }
+
+      tr.append(td);
+    }
+
+    tbody.append(tr);
+  }
+
+  els.previewTable.append(tbody);
+}
+
+function updateDerivedUi() {
+  els.recordCount.textContent = String(measurements.length);
+
+  const last = measurements[measurements.length - 1];
+  els.lastTime.textContent = last
+    ? timeOnly(last.timestamp)
+    : '--:--:--';
+
+  els.targetLine.textContent = currentTargetDescription();
+
+  const cfg = readConfig();
+  els.exportSummary.textContent =
+    measurements.length === 0
+      ? '記録なし'
+      : `${measurements.length}件 / ${cfg.mode === 'simple' ? '1行CSV' : '表形式'}`;
+
+  const hasData = measurements.length > 0;
+  els.undoBtn.disabled = !hasData;
+  els.shareBtn.disabled = !hasData;
+  els.saveBtn.disabled = !hasData;
+
+  updateRecentLog();
+  renderTablePreview();
+  updatePrimaryButtons();
+}
+
+function saveMeasurement(value, timestamp, status, confidence) {
+  const cfg = readConfig();
+
+  if (outputIsFull(cfg)) {
+    setStatus('表入力完了');
+    return false;
+  }
+
+  measurements.push({
+    value,
+    timestamp,
+    status,
+    confidence,
+  });
+
+  updateDerivedUi();
+
+  if (outputIsFull(cfg) && loggingActive) {
+    stopAutoReading(true);
     setStatus('測定完了');
   }
 
@@ -429,20 +632,15 @@ function saveMeasurement(value, timestamp, status) {
 }
 
 function undoLast() {
-  const action = history.pop();
-  if (!action) return;
+  if (!measurements.length) return;
 
-  if (action.kind === 'simple') {
-    simpleValues.splice(action.index, 1);
-  } else {
-    setTableCell(action.row, action.col, action.previous);
-    cursorRow = action.row;
-    cursorCol = action.col;
-    tableComplete = false;
-    recomputeUsedBounds();
-  }
+  measurements.pop();
 
-  if (loggingActive && els.recordMode.value === 'change' && stream) {
+  if (
+    loggingActive &&
+    els.autoTrigger.value === 'change' &&
+    stream
+  ) {
     try {
       changeBaseline = captureFingerprint();
       changeCandidate = null;
@@ -453,37 +651,35 @@ function undoLast() {
   }
 
   setStatus('1つ戻しました');
-  updateAfterDataChange();
+  updateDerivedUi();
 }
 
-function updateAfterDataChange() {
-  els.recordCount.textContent = String(history.length);
+function openSettings() {
+  setSettingsLocked(loggingActive);
+  els.settingsModal.classList.remove('hidden-field');
+}
 
-  const last = history[history.length - 1];
-  els.lastTime.textContent = last ? timeOnly(last.timestamp) : '--:--:--';
+function closeSettings() {
+  els.settingsModal.classList.add('hidden-field');
+  updateDerivedUi();
+}
 
-  els.undoBtn.disabled = history.length === 0;
-  els.undoHint.textContent = last ? `戻す: ${last.target}` : '';
+function toggleRoiPanel(show) {
+  const shouldShow =
+    typeof show === 'boolean'
+      ? show
+      : els.roiAdjustPanel.classList.contains('hidden-field');
 
-  const hasData = history.length > 0;
-  els.shareBtn.disabled = !hasData;
-  els.saveBtn.disabled = !hasData;
-
-  els.startBtn.disabled = !stream || loggingActive || tableComplete;
-  els.singleBtn.disabled = !stream || isReading || tableComplete;
-
-  updateTargetLine();
-  renderPreview();
+  els.roiAdjustPanel.classList.toggle(
+    'hidden-field',
+    !shouldShow
+  );
 }
 
 async function startCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
     alert('このブラウザではカメラを利用できません。iPhone SafariをHTTPSで開いてください。');
     return;
-  }
-
-  if (stream) {
-    stream.getTracks().forEach(track => track.stop());
   }
 
   try {
@@ -521,18 +717,36 @@ async function startCamera() {
     await els.video.play();
     await sleep(350);
 
-    els.singleBtn.disabled = false;
-    els.startBtn.disabled = tableComplete;
-    els.flipBtn.disabled = false;
-
-    els.outputSettings.open = false;
-    els.advancedSettings.open = false;
-
-    setStatus('カメラ準備完了');
+    setStatus('カメラ接続済み');
+    updatePrimaryButtons();
   } catch (err) {
     console.error(err);
+    stream = null;
     setStatus('カメラ起動失敗');
     alert('カメラを起動できません。Safariのカメラ権限とHTTPS接続を確認してください。');
+  }
+}
+
+function stopCamera() {
+  if (loggingActive) {
+    stopAutoReading(false);
+  }
+
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+  }
+
+  stream = null;
+  els.video.srcObject = null;
+  setStatus('カメラ未接続');
+  updatePrimaryButtons();
+}
+
+async function toggleCamera() {
+  if (stream) {
+    stopCamera();
+  } else {
+    await startCamera();
   }
 }
 
@@ -574,7 +788,7 @@ function getRoiSourceRect() {
     throw new Error('video not ready');
   }
 
-  const wrap = document.querySelector('#cameraWrap').getBoundingClientRect();
+  const wrap = els.cameraWrap.getBoundingClientRect();
   const shownAspect = wrap.width / wrap.height;
   const videoAspect = vw / vh;
 
@@ -593,11 +807,15 @@ function getRoiSourceRect() {
 
   const rw = Number(els.roiW.value) / 100;
   const rh = Number(els.roiH.value) / 100;
+  const rx = Number(els.roiX.value) / 100;
   const ry = Number(els.roiY.value) / 100;
 
+  const left = Math.max(0, Math.min(1 - rw, rx - rw / 2));
+  const top = Math.max(0, Math.min(1 - rh, ry - rh / 2));
+
   return {
-    sx: visibleX + visibleW * (0.5 - rw / 2),
-    sy: visibleY + visibleH * (ry - rh / 2),
+    sx: visibleX + visibleW * left,
+    sy: visibleY + visibleH * top,
     sw: visibleW * rw,
     sh: visibleH * rh,
   };
@@ -606,12 +824,19 @@ function getRoiSourceRect() {
 function captureRoi() {
   const rect = getRoiSourceRect();
   const outW = 1100;
-  const outH = Math.max(220, Math.round(outW * rect.sh / rect.sw));
+  const outH = Math.max(
+    220,
+    Math.round(outW * rect.sh / rect.sw)
+  );
 
   els.captureCanvas.width = outW;
   els.captureCanvas.height = outH;
 
-  const ctx = els.captureCanvas.getContext('2d', { willReadFrequently: true });
+  const ctx = els.captureCanvas.getContext(
+    '2d',
+    { willReadFrequently: true }
+  );
+
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
@@ -632,7 +857,11 @@ function captureRoi() {
 
 function captureFingerprint() {
   const rect = getRoiSourceRect();
-  const ctx = changeCanvas.getContext('2d', { willReadFrequently: true });
+
+  const ctx = changeCanvas.getContext(
+    '2d',
+    { willReadFrequently: true }
+  );
 
   ctx.drawImage(
     els.video,
@@ -653,7 +882,10 @@ function captureFingerprint() {
     changeCanvas.height
   ).data;
 
-  const gray = new Float32Array(changeCanvas.width * changeCanvas.height);
+  const gray = new Float32Array(
+    changeCanvas.width * changeCanvas.height
+  );
+
   let sum = 0;
 
   for (let p = 0, i = 0; p < gray.length; p++, i += 4) {
@@ -701,10 +933,10 @@ function changeThresholds() {
 async function checkDisplayChange() {
   if (
     !loggingActive ||
-    els.recordMode.value !== 'change' ||
+    els.autoTrigger.value !== 'change' ||
     isReading ||
     changeCheckBusy ||
-    tableComplete
+    outputIsFull()
   ) {
     return;
   }
@@ -758,7 +990,11 @@ async function checkDisplayChange() {
 function buildAdaptiveBinary(srcCanvas) {
   const w = srcCanvas.width;
   const h = srcCanvas.height;
-  const sctx = srcCanvas.getContext('2d', { willReadFrequently: true });
+  const sctx = srcCanvas.getContext(
+    '2d',
+    { willReadFrequently: true }
+  );
+
   const src = sctx.getImageData(0, 0, w, h);
   const gray = new Uint8Array(w * h);
 
@@ -785,7 +1021,11 @@ function buildAdaptiveBinary(srcCanvas) {
 
   const out = new Uint8ClampedArray(w * h * 4);
   const binary = new Uint8Array(w * h);
-  const radius = Math.max(14, Math.round(Math.min(w, h) * 0.06));
+  const radius = Math.max(
+    14,
+    Math.round(Math.min(w, h) * 0.06)
+  );
+
   const offset = 9;
 
   for (let y = 0; y < h; y++) {
@@ -814,11 +1054,11 @@ function buildAdaptiveBinary(srcCanvas) {
       binary[y * w + x] = isInk ? 1 : 0;
 
       const oi = (y * w + x) * 4;
-      const v = isInk ? 0 : 255;
+      const value = isInk ? 0 : 255;
 
-      out[oi] = v;
-      out[oi + 1] = v;
-      out[oi + 2] = v;
+      out[oi] = value;
+      out[oi + 1] = value;
+      out[oi + 2] = value;
       out[oi + 3] = 255;
     }
   }
@@ -864,13 +1104,20 @@ function findDecimalAndDigitGroups(binary, w, h) {
     }
   }
 
-  const gapJoin = Math.max(6, Math.floor(h * 0.035));
+  const gapJoin = Math.max(
+    6,
+    Math.floor(h * 0.035)
+  );
+
   const merged = [];
 
   for (const group of rawGroups) {
     const prev = merged[merged.length - 1];
 
-    if (prev && group[0] - prev[1] <= gapJoin) {
+    if (
+      prev &&
+      group[0] - prev[1] <= gapJoin
+    ) {
       prev[1] = group[1];
     } else {
       merged.push([...group]);
@@ -988,28 +1235,52 @@ function findDecimalAndDigitGroups(binary, w, h) {
 }
 
 function renderOcrCanvas(pre) {
-  const pad = Math.round(Math.max(30, pre.h * 0.12));
+  const pad = Math.round(
+    Math.max(30, pre.h * 0.12)
+  );
 
-  els.ocrCanvas.width = pre.w + pad * 2;
-  els.ocrCanvas.height = pre.h + pad * 2;
+  els.ocrCanvas.width =
+    pre.w + pad * 2;
 
-  const ctx = els.ocrCanvas.getContext('2d', { willReadFrequently: true });
+  els.ocrCanvas.height =
+    pre.h + pad * 2;
+
+  const ctx = els.ocrCanvas.getContext(
+    '2d',
+    { willReadFrequently: true }
+  );
 
   ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, els.ocrCanvas.width, els.ocrCanvas.height);
+  ctx.fillRect(
+    0,
+    0,
+    els.ocrCanvas.width,
+    els.ocrCanvas.height
+  );
 
   ctx.putImageData(
-    new ImageData(pre.out, pre.w, pre.h),
+    new ImageData(
+      pre.out,
+      pre.w,
+      pre.h
+    ),
     pad,
     pad
   );
 
-  els.debugCanvas.width = els.ocrCanvas.width;
-  els.debugCanvas.height = els.ocrCanvas.height;
+  els.debugCanvas.width =
+    els.ocrCanvas.width;
+
+  els.debugCanvas.height =
+    els.ocrCanvas.height;
 
   els.debugCanvas
     .getContext('2d')
-    .drawImage(els.ocrCanvas, 0, 0);
+    .drawImage(
+      els.ocrCanvas,
+      0,
+      0
+    );
 
   return els.ocrCanvas;
 }
@@ -1032,10 +1303,15 @@ function parseValue(text) {
   if (firstDot >= 0) {
     cleaned =
       cleaned.slice(0, firstDot + 1) +
-      cleaned.slice(firstDot + 1).replace(/\./g, '');
+      cleaned
+        .slice(firstDot + 1)
+        .replace(/\./g, '');
   }
 
-  if (!/^\d{1,6}(\.\d{1,3})?$/.test(cleaned)) {
+  if (
+    !/^\d{1,6}(\.\d{1,3})?$/
+      .test(cleaned)
+  ) {
     return null;
   }
 
@@ -1049,11 +1325,15 @@ function parseValue(text) {
     return null;
   }
 
-  return { value, normalized: cleaned };
+  return {
+    value,
+    normalized: cleaned
+  };
 }
 
 function formatFixedDecimals(digits, places) {
-  const safeDigits = digits.replace(/\D/g, '');
+  const safeDigits =
+    digits.replace(/\D/g, '');
 
   if (!safeDigits) return null;
 
@@ -1061,25 +1341,40 @@ function formatFixedDecimals(digits, places) {
     return String(Number(safeDigits));
   }
 
-  const padded = safeDigits.padStart(places + 1, '0');
-  const splitAt = padded.length - places;
+  const padded =
+    safeDigits.padStart(
+      places + 1,
+      '0'
+    );
+
+  const splitAt =
+    padded.length - places;
+
   const whole =
-    padded.slice(0, splitAt).replace(/^0+(?=\d)/, '') || '0';
+    padded
+      .slice(0, splitAt)
+      .replace(/^0+(?=\d)/, '') || '0';
 
   return `${whole}.${padded.slice(splitAt)}`;
 }
 
 function applyDecimalPolicy(parsed, rawText, decimalInfo) {
   const policy = els.decimalPlaces.value;
-  const rawDigits = normalizeText(rawText).replace(/\D/g, '');
-  const parsedDigits =
-    parsed?.normalized?.replace(/\D/g, '') || '';
+  const rawDigits =
+    normalizeText(rawText)
+      .replace(/\D/g, '');
 
-  const digits = rawDigits || parsedDigits;
+  const parsedDigits =
+    parsed?.normalized
+      ?.replace(/\D/g, '') || '';
+
+  const digits =
+    rawDigits || parsedDigits;
 
   if (policy !== 'auto') {
     const places = Number(policy);
-    const normalized = formatFixedDecimals(digits, places);
+    const normalized =
+      formatFixedDecimals(digits, places);
 
     if (!normalized) return null;
 
@@ -1096,7 +1391,10 @@ function applyDecimalPolicy(parsed, rawText, decimalInfo) {
     };
   }
 
-  if (parsed?.normalized?.includes('.')) {
+  if (
+    parsed?.normalized
+      ?.includes('.')
+  ) {
     return parsed;
   }
 
@@ -1108,21 +1406,35 @@ function applyDecimalPolicy(parsed, rawText, decimalInfo) {
     return parsed;
   }
 
-  const groups = decimalInfo.digitGroups;
-  const dotX = decimalInfo.decimal.x;
+  const groups =
+    decimalInfo.digitGroups;
+
+  const dotX =
+    decimalInfo.decimal.x;
+
   let insertAt = -1;
 
-  if (groups.length === digits.length) {
+  if (
+    groups.length ===
+    digits.length
+  ) {
     const centers =
-      groups.map(group => (group[0] + group[1]) / 2);
+      groups.map(
+        group =>
+          (group[0] +
+           group[1]) / 2
+      );
 
     insertAt =
-      centers.filter(x => x < dotX).length;
+      centers.filter(
+        x => x < dotX
+      ).length;
   }
 
   if (
     insertAt <= 0 ||
-    insertAt >= digits.length
+    insertAt >=
+      digits.length
   ) {
     return parsed;
   }
@@ -1138,33 +1450,50 @@ function applyDecimalPolicy(parsed, rawText, decimalInfo) {
 }
 
 async function recognizeCanvas(canvas, decimalInfo) {
-  const activeWorker = await ensureWorker();
-  const result = await activeWorker.recognize(canvas);
+  const activeWorker =
+    await ensureWorker();
 
-  const raw = result?.data?.text ?? '';
-  const confidence = Number(result?.data?.confidence ?? 0);
+  const result =
+    await activeWorker.recognize(canvas);
 
-  let parsed = parseValue(raw);
+  const raw =
+    result?.data?.text ?? '';
 
-  parsed = applyDecimalPolicy(
-    parsed,
-    raw,
-    decimalInfo
-  );
+  const confidence =
+    Number(
+      result?.data?.confidence ?? 0
+    );
+
+  let parsed =
+    parseValue(raw);
+
+  parsed =
+    applyDecimalPolicy(
+      parsed,
+      raw,
+      decimalInfo
+    );
 
   if (!parsed) {
     const digitsOnly =
-      normalizeText(raw).replace(/\D/g, '');
+      normalizeText(raw)
+        .replace(/\D/g, '');
 
-    if (/^\d{1,7}$/.test(digitsOnly)) {
-      parsed = applyDecimalPolicy(
-        {
-          value: Number(digitsOnly),
-          normalized: digitsOnly
-        },
-        raw,
-        decimalInfo
-      );
+    if (
+      /^\d{1,7}$/
+        .test(digitsOnly)
+    ) {
+      parsed =
+        applyDecimalPolicy(
+          {
+            value:
+              Number(digitsOnly),
+            normalized:
+              digitsOnly
+          },
+          raw,
+          decimalInfo
+        );
     }
   }
 
@@ -1176,16 +1505,24 @@ async function recognizeCanvas(canvas, decimalInfo) {
 }
 
 async function readOnce({ save = true } = {}) {
-  if (isReading || tableComplete) return;
+  if (
+    isReading ||
+    outputIsFull()
+  ) {
+    return;
+  }
 
   isReading = true;
-  els.singleBtn.disabled = true;
+  updatePrimaryButtons();
 
   try {
     setStatus('読み取り中');
 
-    const src = captureRoi();
-    const pre = buildAdaptiveBinary(src);
+    const src =
+      captureRoi();
+
+    const pre =
+      buildAdaptiveBinary(src);
 
     const decimalInfo =
       findDecimalAndDigitGroups(
@@ -1194,7 +1531,8 @@ async function readOnce({ save = true } = {}) {
         pre.h
       );
 
-    const ocrCanvas = renderOcrCanvas(pre);
+    const ocrCanvas =
+      renderOcrCanvas(pre);
 
     const result =
       await recognizeCanvas(
@@ -1202,7 +1540,8 @@ async function readOnce({ save = true } = {}) {
         decimalInfo
       );
 
-    const ts = nowIsoLocal();
+    const timestamp =
+      nowIsoLocal();
 
     els.confidence.textContent =
       `${Math.round(result.confidence)}%`;
@@ -1218,74 +1557,92 @@ async function readOnce({ save = true } = {}) {
       `OCR原文: ${JSON.stringify(result.raw.trim())}${decimalInfoText}`;
 
     if (result.parsed) {
-      const value = result.parsed.normalized;
+      const value =
+        result.parsed.normalized;
 
-      els.currentValue.textContent = value;
-      els.ocrMiniText.textContent = value;
+      els.currentValue.textContent =
+        value;
 
-      const lowConfidence = result.confidence < 35;
-      const resultStatus = lowConfidence ? 'LOW_CONFIDENCE' : 'OK';
+      els.ocrMiniText.textContent =
+        value;
+
+      const lowConfidence =
+        result.confidence < 35;
+
+      const resultStatus =
+        lowConfidence
+          ? 'LOW_CONFIDENCE'
+          : 'OK';
 
       setStatus(
-        loggingActive && els.recordMode.value === 'change'
-          ? `${resultStatus} / 監視中`
+        loggingActive
+          ? `${resultStatus} / 自動中`
           : resultStatus
       );
 
       if (save) {
         saveMeasurement(
           value,
-          ts,
-          resultStatus
+          timestamp,
+          resultStatus,
+          result.confidence
         );
       }
     } else {
-      els.ocrMiniText.textContent = 'ERROR';
+      els.ocrMiniText.textContent =
+        'ERROR';
 
       setStatus(
-        loggingActive && els.recordMode.value === 'change'
-          ? 'OCR_ERROR / 監視中'
+        loggingActive
+          ? 'OCR_ERROR / 自動中'
           : 'OCR_ERROR'
       );
     }
   } catch (err) {
     console.error(err);
-    els.ocrMiniText.textContent = 'ERROR';
+    els.ocrMiniText.textContent =
+      'ERROR';
     setStatus('ERROR');
   } finally {
     isReading = false;
-    els.singleBtn.disabled = !stream || tableComplete;
     els.ocrProgress.value = 0;
+    updatePrimaryButtons();
   }
 }
 
-async function startLogging() {
+async function startAutoReading() {
   if (
     loggingActive ||
     !stream ||
-    tableComplete
+    outputIsFull()
   ) {
     return;
   }
 
-  lockSchema();
-
   loggingActive = true;
-  els.startBtn.disabled = true;
-  els.stopBtn.disabled = false;
+  setSettingsLocked(true);
+  closeSettings();
+  updatePrimaryButtons();
 
-  unlockAdvancedControls(true);
-  els.outputSettings.open = false;
-  els.advancedSettings.open = false;
+  if (
+    els.autoTrigger.value ===
+    'change'
+  ) {
+    changeBaseline =
+      captureFingerprint();
 
-  if (els.recordMode.value === 'change') {
-    changeBaseline = captureFingerprint();
     changeCandidate = null;
     changeCandidateCount = 0;
 
-    setStatus('表示変化を監視中');
+    setStatus(
+      '画面変化を監視中'
+    );
 
-    await readOnce({ save: true });
+    await readOnce({
+      save: true
+    });
+
+    if (!loggingActive) return;
 
     timer = setInterval(
       checkDisplayChange,
@@ -1293,20 +1650,33 @@ async function startLogging() {
     );
   } else {
     const sec =
-      Number(els.intervalSec.value);
+      Number(
+        els.intervalSec.value
+      );
 
-    setStatus('連続記録中');
+    setStatus(
+      `${sec}秒間隔で自動読み取り`
+    );
 
-    await readOnce({ save: true });
+    await readOnce({
+      save: true
+    });
+
+    if (!loggingActive) return;
 
     timer = setInterval(
-      () => readOnce({ save: true }),
+      () =>
+        readOnce({
+          save: true
+        }),
       sec * 1000
     );
   }
 }
 
-function stopLogging(preserveStatus = false) {
+function stopAutoReading(
+  preserveStatus = false
+) {
   if (timer) {
     clearInterval(timer);
   }
@@ -1317,129 +1687,175 @@ function stopLogging(preserveStatus = false) {
   changeCandidate = null;
   changeCandidateCount = 0;
 
-  els.startBtn.disabled = !stream || tableComplete;
-  els.stopBtn.disabled = true;
-
-  unlockAdvancedControls(false);
+  setSettingsLocked(false);
 
   if (!preserveStatus) {
-    setStatus('停止');
+    setStatus('自動読み取り停止');
+  }
+
+  updatePrimaryButtons();
+  updateDerivedUi();
+}
+
+async function handleReadButton() {
+  if (els.readMode.value === 'manual') {
+    await readOnce({ save: true });
+    return;
+  }
+
+  if (loggingActive) {
+    stopAutoReading(false);
+  } else {
+    await startAutoReading();
   }
 }
 
 function csvEscape(value) {
-  const s = String(value ?? '');
+  const s =
+    String(value ?? '');
 
   return /[",\r\n]/.test(s)
     ? `"${s.replace(/"/g, '""')}"`
     : s;
 }
 
-function getExportSize() {
-  const cfg = config;
-
-  if (cfg.mode !== 'table') {
-    return { rows: 0, cols: 0 };
-  }
-
-  const customColCount =
-    cfg.columnHeaderMode === 'custom'
-      ? cfg.columnHeaders.length
-      : 0;
-
-  const customRowCount =
-    cfg.rowHeaderMode === 'custom'
-      ? cfg.rowHeaders.length
-      : 0;
-
-  const cols = cfg.fixedColumns
-    ? cfg.columnCount
-    : Math.max(
-        usedMaxCol + 1,
-        cursorCol + 1,
-        customColCount,
-        1
-      );
-
-  const rows = cfg.fixedRows
-    ? cfg.rowCount
-    : Math.max(
-        usedMaxRow + 1,
-        cursorRow + 1,
-        customRowCount,
-        1
-      );
-
-  return { rows, cols };
-}
-
 function buildCsvText() {
-  if (!schemaLocked) {
-    config = readConfigFromUi();
-  }
-
-  const cfg = schemaLocked ? config : readConfigFromUi();
+  const cfg = readConfig();
 
   if (cfg.mode === 'simple') {
-    return '\uFEFF' + simpleValues.map(csvEscape).join(',');
+    return (
+      '\uFEFF' +
+      measurements
+        .map(record =>
+          csvEscape(record.value)
+        )
+        .join(',')
+    );
   }
 
-  const { rows, cols } = getExportSize();
+  const matrix =
+    buildTableMatrix(cfg);
+
+  const { rows, cols } =
+    computeExportSize(cfg);
+
   const lines = [];
 
-  if (cfg.columnHeaderMode !== 'none') {
+  if (
+    cfg.columnHeaderMode !==
+    'none'
+  ) {
     const header = [];
 
-    if (cfg.rowHeaderMode !== 'none') {
-      header.push(cfg.cornerHeader || '');
+    if (
+      cfg.rowHeaderMode !==
+      'none'
+    ) {
+      header.push(
+        cfg.cornerHeader || ''
+      );
     }
 
-    for (let c = 0; c < cols; c++) {
-      header.push(getColumnLabel(c, cfg));
+    for (
+      let c = 0;
+      c < cols;
+      c++
+    ) {
+      header.push(
+        getColumnLabel(c, cfg)
+      );
     }
 
-    lines.push(header.map(csvEscape).join(','));
+    lines.push(
+      header
+        .map(csvEscape)
+        .join(',')
+    );
   }
 
-  for (let r = 0; r < rows; r++) {
+  for (
+    let r = 0;
+    r < rows;
+    r++
+  ) {
     const row = [];
 
-    if (cfg.rowHeaderMode !== 'none') {
-      row.push(getRowLabel(r, cfg));
+    if (
+      cfg.rowHeaderMode !==
+      'none'
+    ) {
+      row.push(
+        getRowLabel(r, cfg)
+      );
     }
 
-    for (let c = 0; c < cols; c++) {
-      row.push(getTableCell(r, c));
+    for (
+      let c = 0;
+      c < cols;
+      c++
+    ) {
+      row.push(
+        matrix[r]?.[c] ?? ''
+      );
     }
 
-    lines.push(row.map(csvEscape).join(','));
+    lines.push(
+      row
+        .map(csvEscape)
+        .join(',')
+    );
   }
 
-  return '\uFEFF' + lines.join('\r\n');
+  return (
+    '\uFEFF' +
+    lines.join('\r\n')
+  );
 }
 
 function makeCsvFile() {
-  const csv = buildCsvText();
+  const csv =
+    buildCsvText();
+
   const d = new Date();
-  const pad = n => String(n).padStart(2, '0');
+  const pad =
+    n =>
+      String(n).padStart(
+        2,
+        '0'
+      );
 
   const filename =
     `swt-log-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.csv`;
 
-  const blob = new Blob(
-    [csv],
-    { type: 'text/csv;charset=utf-8' }
-  );
+  const blob =
+    new Blob(
+      [csv],
+      {
+        type:
+          'text/csv;charset=utf-8'
+      }
+    );
 
-  return { csv, blob, filename };
+  return {
+    csv,
+    blob,
+    filename
+  };
 }
 
 function downloadCsv() {
-  if (history.length === 0) return;
+  if (!measurements.length) return;
 
-  const { blob, filename } = makeCsvFile();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const {
+    blob,
+    filename
+  } = makeCsvFile();
+
+  const url =
+    URL.createObjectURL(blob);
+
+  const a =
+    document.createElement('a');
 
   a.download = filename;
   a.href = url;
@@ -1449,163 +1865,76 @@ function downloadCsv() {
   a.remove();
 
   setTimeout(
-    () => URL.revokeObjectURL(url),
+    () =>
+      URL.revokeObjectURL(url),
     1000
   );
 
-  setStatus('CSVを保存しました');
+  setStatus(
+    'CSVを保存しました'
+  );
 }
 
 async function shareCsv() {
-  if (history.length === 0) return;
+  if (!measurements.length) return;
 
-  const { blob, filename } = makeCsvFile();
+  const {
+    blob,
+    filename
+  } = makeCsvFile();
 
   try {
-    const file = new File(
-      [blob],
-      filename,
-      { type: 'text/csv;charset=utf-8' }
-    );
+    const file =
+      new File(
+        [blob],
+        filename,
+        {
+          type:
+            'text/csv;charset=utf-8'
+        }
+      );
 
     if (
       navigator.share &&
-      (!navigator.canShare ||
-       navigator.canShare({ files: [file] }))
+      (
+        !navigator.canShare ||
+        navigator.canShare({
+          files: [file]
+        })
+      )
     ) {
       await navigator.share({
         files: [file],
         title: 'SWT測定データ',
-        text: 'SWT Loggerで作成したCSVです。'
+        text:
+          'SWT Loggerで作成したCSVです。'
       });
 
       setStatus('共有しました');
       return;
     }
   } catch (err) {
-    if (err?.name === 'AbortError') {
-      setStatus('共有をキャンセル');
+    if (
+      err?.name ===
+      'AbortError'
+    ) {
+      setStatus(
+        '共有をキャンセル'
+      );
+
       return;
     }
 
-    console.error('share failed', err);
+    console.error(
+      'share failed',
+      err
+    );
   }
 
   downloadCsv();
 }
 
-function renderPreview() {
-  els.previewTable.textContent = '';
-
-  const cfg = getActiveConfig();
-
-  if (cfg.mode === 'simple') {
-    const tbody = document.createElement('tbody');
-    const tr = document.createElement('tr');
-
-    const count = Math.max(simpleValues.length + 1, 1);
-
-    for (let i = 0; i < count; i++) {
-      const td = document.createElement('td');
-      td.textContent = simpleValues[i] ?? '';
-
-      if (
-        schemaLocked &&
-        i === simpleValues.length
-      ) {
-        td.classList.add('active-cell');
-      }
-
-      tr.append(td);
-    }
-
-    tbody.append(tr);
-    els.previewTable.append(tbody);
-    return;
-  }
-
-  const previewCfg = schemaLocked ? config : readConfigFromUi();
-
-  let rows;
-  let cols;
-
-  if (schemaLocked) {
-    ({ rows, cols } = getExportSize());
-  } else {
-    cols = previewCfg.fixedColumns
-      ? previewCfg.columnCount
-      : Math.max(
-          previewCfg.columnHeaderMode === 'custom'
-            ? previewCfg.columnHeaders.length
-            : 3,
-          1
-        );
-
-    rows = previewCfg.fixedRows
-      ? previewCfg.rowCount
-      : Math.max(
-          previewCfg.rowHeaderMode === 'custom'
-            ? previewCfg.rowHeaders.length
-            : 3,
-          1
-        );
-  }
-
-  if (previewCfg.columnHeaderMode !== 'none') {
-    const thead = document.createElement('thead');
-    const tr = document.createElement('tr');
-
-    if (previewCfg.rowHeaderMode !== 'none') {
-      const th = document.createElement('th');
-      th.textContent = previewCfg.cornerHeader || '';
-      tr.append(th);
-    }
-
-    for (let c = 0; c < cols; c++) {
-      const th = document.createElement('th');
-      th.textContent = getColumnLabel(c, previewCfg);
-      tr.append(th);
-    }
-
-    thead.append(tr);
-    els.previewTable.append(thead);
-  }
-
-  const tbody = document.createElement('tbody');
-
-  for (let r = 0; r < rows; r++) {
-    const tr = document.createElement('tr');
-
-    if (previewCfg.rowHeaderMode !== 'none') {
-      const td = document.createElement('td');
-      td.textContent = getRowLabel(r, previewCfg);
-      td.classList.add('row-header');
-      tr.append(td);
-    }
-
-    for (let c = 0; c < cols; c++) {
-      const td = document.createElement('td');
-      td.textContent = schemaLocked ? getTableCell(r, c) : '';
-
-      if (
-        schemaLocked &&
-        !tableComplete &&
-        r === cursorRow &&
-        c === cursorCol
-      ) {
-        td.classList.add('active-cell');
-      }
-
-      tr.append(td);
-    }
-
-    tbody.append(tr);
-  }
-
-  els.previewTable.append(tbody);
-}
-
-const outputUiControls = [
+const outputControls = [
   els.outputMode,
   els.fixedColumns,
   els.columnCount,
@@ -1618,52 +1947,147 @@ const outputUiControls = [
   els.cornerHeader,
 ];
 
-outputUiControls.forEach(control => {
-  control.addEventListener('input', updateOutputSettingsUi);
-  control.addEventListener('change', updateOutputSettingsUi);
-});
+outputControls.forEach(
+  control => {
+    control.addEventListener(
+      'input',
+      updateOutputSettingsUi
+    );
 
-els.recordMode.addEventListener('change', updateAdvancedUi);
+    control.addEventListener(
+      'change',
+      updateOutputSettingsUi
+    );
+  }
+);
+
+els.readMode.addEventListener(
+  'change',
+  updateReadSettingsUi
+);
+
+els.autoTrigger.addEventListener(
+  'change',
+  updateReadSettingsUi
+);
+
+els.unit.addEventListener(
+  'change',
+  () => {
+    els.currentUnit.textContent =
+      els.unit.value;
+  }
+);
 
 [
+  els.roiX,
+  els.roiY,
   els.roiW,
-  els.roiH,
-  els.roiY
+  els.roiH
 ].forEach(control => {
-  control.addEventListener('input', updateRoi);
+  control.addEventListener(
+    'input',
+    updateRoi
+  );
 });
 
-els.unit.addEventListener('change', () => {
-  els.currentUnit.textContent = els.unit.value;
-});
+els.settingsBtn.addEventListener(
+  'click',
+  openSettings
+);
 
-els.startCameraBtn.addEventListener('click', startCamera);
-els.flipBtn.addEventListener('click', startCamera);
-els.singleBtn.addEventListener('click', () => readOnce({ save: true }));
-els.startBtn.addEventListener('click', startLogging);
-els.stopBtn.addEventListener('click', () => stopLogging(false));
-els.undoBtn.addEventListener('click', undoLast);
-els.shareBtn.addEventListener('click', shareCsv);
-els.saveBtn.addEventListener('click', downloadCsv);
+els.settingsCloseBtn.addEventListener(
+  'click',
+  closeSettings
+);
 
-window.addEventListener('beforeunload', () => {
-  if (timer) {
-    clearInterval(timer);
+els.settingsModal.addEventListener(
+  'click',
+  event => {
+    if (
+      event.target ===
+      els.settingsModal
+    ) {
+      closeSettings();
+    }
   }
+);
 
-  if (stream) {
-    stream
-      .getTracks()
-      .forEach(track => track.stop());
+document.addEventListener(
+  'keydown',
+  event => {
+    if (
+      event.key ===
+      'Escape' &&
+      !els.settingsModal
+        .classList
+        .contains('hidden-field')
+    ) {
+      closeSettings();
+    }
   }
+);
 
-  if (worker) {
-    worker.terminate();
+els.roiAdjustBtn.addEventListener(
+  'click',
+  () =>
+    toggleRoiPanel()
+);
+
+els.roiAdjustCloseBtn.addEventListener(
+  'click',
+  () =>
+    toggleRoiPanel(false)
+);
+
+els.cameraBtn.addEventListener(
+  'click',
+  toggleCamera
+);
+
+els.readBtn.addEventListener(
+  'click',
+  handleReadButton
+);
+
+els.undoBtn.addEventListener(
+  'click',
+  undoLast
+);
+
+els.shareBtn.addEventListener(
+  'click',
+  shareCsv
+);
+
+els.saveBtn.addEventListener(
+  'click',
+  downloadCsv
+);
+
+window.addEventListener(
+  'beforeunload',
+  () => {
+    if (timer) {
+      clearInterval(timer);
+    }
+
+    if (stream) {
+      stream
+        .getTracks()
+        .forEach(
+          track =>
+            track.stop()
+        );
+    }
+
+    if (worker) {
+      worker.terminate();
+    }
   }
-});
+);
 
 updateRoi();
 updateOutputSettingsUi();
-updateAdvancedUi();
-updateAfterDataChange();
-renderPreview();
+updateReadSettingsUi();
+updateDerivedUi();
