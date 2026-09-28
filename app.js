@@ -109,7 +109,7 @@ async function ensureWorker() {
   });
   await worker.setParameters({
     tessedit_char_whitelist: '0123456789.',
-    tessedit_pageseg_mode: '7',
+    tessedit_pageseg_mode: '8',
     preserve_interword_spaces: '0',
     classify_bln_numeric_mode: '1',
     user_defined_dpi: '300'
@@ -348,18 +348,26 @@ function parseValue(text) {
 }
 
 function recoverDecimalIfNeeded(parsed, rawText, decimalInfo) {
-  if (!decimalInfo?.decimal || !parsed) return parsed;
+  if (!decimalInfo?.decimal) return parsed;
   if (normalizeText(rawText).includes('.')) return parsed;
 
-  const digits = parsed.normalized.replace(/\D/g, '');
+  const rawDigits = normalizeText(rawText).replace(/\D/g, '');
+  const digits = parsed?.normalized?.replace(/\D/g, '') || rawDigits;
+  if (!digits || digits.length < 2) return parsed;
+
   const groups = decimalInfo.digitGroups;
-  if (groups.length !== digits.length || digits.length < 2) return parsed;
-
   const dotX = decimalInfo.decimal.x;
-  const centers = groups.map(g => (g[0] + g[1]) / 2);
-  const insertAt = centers.filter(x => x < dotX).length;
-  if (insertAt <= 0 || insertAt >= digits.length) return parsed;
 
+  let insertAt = -1;
+  if (groups.length === digits.length) {
+    const centers = groups.map(g => (g[0] + g[1]) / 2);
+    insertAt = centers.filter(x => x < dotX).length;
+  } else {
+    // SWT表示は小数1桁が基本。OCRが小数点だけ落とした場合の安全な補完。
+    insertAt = digits.length - 1;
+  }
+
+  if (insertAt <= 0 || insertAt >= digits.length) return parsed;
   const recovered = `${digits.slice(0, insertAt)}.${digits.slice(insertAt)}`;
   const value = Number(recovered);
   if (!Number.isFinite(value)) return parsed;
@@ -373,6 +381,19 @@ async function recognizeCanvas(canvas, decimalInfo) {
   const confidence = Number(result?.data?.confidence ?? 0);
   let parsed = parseValue(raw);
   parsed = recoverDecimalIfNeeded(parsed, raw, decimalInfo);
+
+  // PSM 8 はこのLCDの数字列には強いが、小数点だけ無視することがある。
+  // 数字列自体が取れていれば、小数点検出結果から値を復元する。
+  if (!parsed) {
+    const digitsOnly = normalizeText(raw).replace(/\D/g, '');
+    if (/^\d{2,6}$/.test(digitsOnly)) {
+      parsed = recoverDecimalIfNeeded(
+        { value: Number(digitsOnly), normalized: digitsOnly },
+        raw,
+        decimalInfo
+      );
+    }
+  }
   return { raw, confidence, parsed };
 }
 
