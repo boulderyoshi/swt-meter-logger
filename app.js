@@ -3,7 +3,12 @@ const els = {
   roi: document.querySelector('#roi'),
   startCameraBtn: document.querySelector('#startCameraBtn'),
   flipBtn: document.querySelector('#flipBtn'),
+  recordMode: document.querySelector('#recordMode'),
+  decimalPlaces: document.querySelector('#decimalPlaces'),
+  intervalField: document.querySelector('#intervalField'),
   intervalSec: document.querySelector('#intervalSec'),
+  sensitivityField: document.querySelector('#sensitivityField'),
+  changeSensitivity: document.querySelector('#changeSensitivity'),
   unit: document.querySelector('#unit'),
   roiW: document.querySelector('#roiW'),
   roiH: document.querySelector('#roiH'),
@@ -22,6 +27,9 @@ const els = {
   lastTime: document.querySelector('#lastTime'),
   ocrProgress: document.querySelector('#ocrProgress'),
   ocrText: document.querySelector('#ocrText'),
+  noteText: document.querySelector('#noteText'),
+  insertTextBtn: document.querySelector('#insertTextBtn'),
+  insertBlankBtn: document.querySelector('#insertBlankBtn'),
   csvBtn: document.querySelector('#csvBtn'),
   logBody: document.querySelector('#logBody'),
   captureCanvas: document.querySelector('#captureCanvas'),
@@ -32,8 +40,18 @@ const els = {
 let stream = null;
 let worker = null;
 let timer = null;
+let loggingActive = false;
 let isReading = false;
-const records = [];
+let changeCheckBusy = false;
+let changeBaseline = null;
+let changeCandidate = null;
+let changeCandidateCount = 0;
+let measurementCount = 0;
+
+const entries = [];
+const changeCanvas = document.createElement('canvas');
+changeCanvas.width = 96;
+changeCanvas.height = 32;
 
 function setStatus(text) { els.status.textContent = text; }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
@@ -53,8 +71,28 @@ function updateRoi() {
   els.roiHLabel.textContent = `${els.roiH.value}%`;
   els.roiYLabel.textContent = `${els.roiY.value}%`;
 }
+
+function updateModeUi() {
+  const changeMode = els.recordMode.value === 'change';
+  els.intervalField.classList.toggle('hidden-field', changeMode);
+  els.sensitivityField.classList.toggle('hidden-field', !changeMode);
+  els.startBtn.textContent = changeMode ? '監視開始' : '連続記録開始';
+}
+
+function lockMeasurementControls(locked) {
+  els.recordMode.disabled = locked;
+  els.decimalPlaces.disabled = locked;
+  els.intervalSec.disabled = locked;
+  els.changeSensitivity.disabled = locked;
+  els.unit.disabled = locked;
+  els.roiW.disabled = locked;
+  els.roiH.disabled = locked;
+  els.roiY.disabled = locked;
+}
+
 [els.roiW, els.roiH, els.roiY].forEach(x => x.addEventListener('input', updateRoi));
 els.unit.addEventListener('change', () => els.currentUnit.textContent = els.unit.value);
+els.recordMode.addEventListener('change', updateModeUi);
 
 async function startCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -118,7 +156,7 @@ async function ensureWorker() {
   return worker;
 }
 
-function captureRoi() {
+function getRoiSourceRect() {
   const v = els.video;
   const vw = v.videoWidth;
   const vh = v.videoHeight;
@@ -128,7 +166,11 @@ function captureRoi() {
   const shownAspect = wrap.width / wrap.height;
   const videoAspect = vw / vh;
 
-  let visibleX = 0, visibleY = 0, visibleW = vw, visibleH = vh;
+  let visibleX = 0;
+  let visibleY = 0;
+  let visibleW = vw;
+  let visibleH = vh;
+
   if (videoAspect > shownAspect) {
     visibleW = vh * shownAspect;
     visibleX = (vw - visibleW) / 2;
@@ -141,21 +183,113 @@ function captureRoi() {
   const rh = Number(els.roiH.value) / 100;
   const ry = Number(els.roiY.value) / 100;
 
-  const sx = visibleX + visibleW * (0.5 - rw / 2);
-  const sy = visibleY + visibleH * (ry - rh / 2);
-  const sw = visibleW * rw;
-  const sh = visibleH * rh;
+  return {
+    sx: visibleX + visibleW * (0.5 - rw / 2),
+    sy: visibleY + visibleH * (ry - rh / 2),
+    sw: visibleW * rw,
+    sh: visibleH * rh,
+  };
+}
 
+function captureRoi() {
+  const rect = getRoiSourceRect();
   const outW = 1100;
-  const outH = Math.max(220, Math.round(outW * sh / sw));
+  const outH = Math.max(220, Math.round(outW * rect.sh / rect.sw));
+
   els.captureCanvas.width = outW;
   els.captureCanvas.height = outH;
 
   const ctx = els.captureCanvas.getContext('2d', { willReadFrequently: true });
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(v, sx, sy, sw, sh, 0, 0, outW, outH);
+  ctx.drawImage(
+    els.video,
+    rect.sx, rect.sy, rect.sw, rect.sh,
+    0, 0, outW, outH
+  );
   return els.captureCanvas;
+}
+
+function captureFingerprint() {
+  const rect = getRoiSourceRect();
+  const ctx = changeCanvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(
+    els.video,
+    rect.sx, rect.sy, rect.sw, rect.sh,
+    0, 0, changeCanvas.width, changeCanvas.height
+  );
+
+  const data = ctx.getImageData(0, 0, changeCanvas.width, changeCanvas.height).data;
+  const gray = new Float32Array(changeCanvas.width * changeCanvas.height);
+  let sum = 0;
+
+  for (let p = 0, i = 0; p < gray.length; p++, i += 4) {
+    const g = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    gray[p] = g;
+    sum += g;
+  }
+
+  const mean = sum / gray.length;
+  for (let i = 0; i < gray.length; i++) gray[i] -= mean;
+  return gray;
+}
+
+function fingerprintDistance(a, b) {
+  if (!a || !b || a.length !== b.length) return 1;
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i]);
+  return sum / (a.length * 255);
+}
+
+function changeThresholds() {
+  switch (els.changeSensitivity.value) {
+    case 'high': return { changed: 0.010, stable: 0.007 };
+    case 'low': return { changed: 0.032, stable: 0.014 };
+    default: return { changed: 0.018, stable: 0.010 };
+  }
+}
+
+async function checkDisplayChange() {
+  if (!loggingActive || els.recordMode.value !== 'change' || isReading || changeCheckBusy) return;
+  changeCheckBusy = true;
+
+  try {
+    const fp = captureFingerprint();
+    if (!changeBaseline) {
+      changeBaseline = fp;
+      return;
+    }
+
+    const thresholds = changeThresholds();
+    const delta = fingerprintDistance(fp, changeBaseline);
+
+    if (delta < thresholds.changed) {
+      changeCandidate = null;
+      changeCandidateCount = 0;
+      return;
+    }
+
+    if (!changeCandidate || fingerprintDistance(fp, changeCandidate) > thresholds.stable) {
+      changeCandidate = fp;
+      changeCandidateCount = 1;
+      return;
+    }
+
+    changeCandidateCount++;
+    changeCandidate = fp;
+
+    if (changeCandidateCount >= 3) {
+      changeBaseline = fp;
+      changeCandidate = null;
+      changeCandidateCount = 0;
+      setStatus('表示変化を検出');
+      await readOnce({ save: true });
+    }
+  } catch (err) {
+    console.error('change detection error', err);
+  } finally {
+    changeCheckBusy = false;
+  }
 }
 
 function buildAdaptiveBinary(srcCanvas) {
@@ -252,9 +386,13 @@ function findDecimalAndDigitGroups(binary, w, h) {
       const idx = y * w + x;
       if (!binary[idx] || visited[idx]) continue;
 
-      let stack = [idx];
+      const stack = [idx];
       visited[idx] = 1;
-      let area = 0, minX = x, maxX = x, minY = y, maxY = y;
+      let area = 0;
+      let minX = x;
+      let maxX = x;
+      let minY = y;
+      let maxY = y;
 
       while (stack.length) {
         const cur = stack.pop();
@@ -312,11 +450,11 @@ function renderOcrCanvas(pre) {
   const pad = Math.round(Math.max(30, pre.h * 0.12));
   els.ocrCanvas.width = pre.w + pad * 2;
   els.ocrCanvas.height = pre.h + pad * 2;
+
   const ctx = els.ocrCanvas.getContext('2d', { willReadFrequently: true });
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, els.ocrCanvas.width, els.ocrCanvas.height);
-  const img = new ImageData(pre.out, pre.w, pre.h);
-  ctx.putImageData(img, pad, pad);
+  ctx.putImageData(new ImageData(pre.out, pre.w, pre.h), pad, pad);
 
   els.debugCanvas.width = els.ocrCanvas.width;
   els.debugCanvas.height = els.ocrCanvas.height;
@@ -341,33 +479,57 @@ function parseValue(text) {
     cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
   }
 
-  if (!/^\d{1,5}(\.\d{1,3})?$/.test(cleaned)) return null;
+  if (!/^\d{1,6}(\.\d{1,3})?$/.test(cleaned)) return null;
   const value = Number(cleaned);
-  if (!Number.isFinite(value) || value < 0 || value > 99999) return null;
+  if (!Number.isFinite(value) || value < 0 || value > 999999) return null;
   return { value, normalized: cleaned };
 }
 
-function recoverDecimalIfNeeded(parsed, rawText, decimalInfo) {
-  if (!decimalInfo?.decimal) return parsed;
-  if (normalizeText(rawText).includes('.')) return parsed;
+function formatFixedDecimals(digits, places) {
+  const safeDigits = digits.replace(/\D/g, '');
+  if (!safeDigits) return null;
+  if (places === 0) return String(Number(safeDigits));
 
+  const padded = safeDigits.padStart(places + 1, '0');
+  const splitAt = padded.length - places;
+  const whole = padded.slice(0, splitAt).replace(/^0+(?=\d)/, '') || '0';
+  return `${whole}.${padded.slice(splitAt)}`;
+}
+
+function applyDecimalPolicy(parsed, rawText, decimalInfo) {
+  const policy = els.decimalPlaces.value;
   const rawDigits = normalizeText(rawText).replace(/\D/g, '');
-  const digits = parsed?.normalized?.replace(/\D/g, '') || rawDigits;
-  if (!digits || digits.length < 2) return parsed;
+  const parsedDigits = parsed?.normalized?.replace(/\D/g, '') || '';
+  const digits = rawDigits || parsedDigits;
+
+  if (policy !== 'auto') {
+    const places = Number(policy);
+    const normalized = formatFixedDecimals(digits, places);
+    if (!normalized) return null;
+    const value = Number(normalized);
+    if (!Number.isFinite(value)) return null;
+    return {
+      value,
+      normalized,
+      decimalRecovered: places > 0 && !normalizeText(rawText).includes('.'),
+      decimalFixed: true
+    };
+  }
+
+  if (parsed?.normalized?.includes('.')) return parsed;
+  if (!decimalInfo?.decimal || !digits || digits.length < 2) return parsed;
 
   const groups = decimalInfo.digitGroups;
   const dotX = decimalInfo.decimal.x;
-
   let insertAt = -1;
+
   if (groups.length === digits.length) {
     const centers = groups.map(g => (g[0] + g[1]) / 2);
     insertAt = centers.filter(x => x < dotX).length;
-  } else {
-    // SWT表示は小数1桁が基本。OCRが小数点だけ落とした場合の安全な補完。
-    insertAt = digits.length - 1;
   }
 
   if (insertAt <= 0 || insertAt >= digits.length) return parsed;
+
   const recovered = `${digits.slice(0, insertAt)}.${digits.slice(insertAt)}`;
   const value = Number(recovered);
   if (!Number.isFinite(value)) return parsed;
@@ -379,21 +541,21 @@ async function recognizeCanvas(canvas, decimalInfo) {
   const result = await w.recognize(canvas);
   const raw = result?.data?.text ?? '';
   const confidence = Number(result?.data?.confidence ?? 0);
-  let parsed = parseValue(raw);
-  parsed = recoverDecimalIfNeeded(parsed, raw, decimalInfo);
 
-  // PSM 8 はこのLCDの数字列には強いが、小数点だけ無視することがある。
-  // 数字列自体が取れていれば、小数点検出結果から値を復元する。
+  let parsed = parseValue(raw);
+  parsed = applyDecimalPolicy(parsed, raw, decimalInfo);
+
   if (!parsed) {
     const digitsOnly = normalizeText(raw).replace(/\D/g, '');
-    if (/^\d{2,6}$/.test(digitsOnly)) {
-      parsed = recoverDecimalIfNeeded(
+    if (/^\d{1,7}$/.test(digitsOnly)) {
+      parsed = applyDecimalPolicy(
         { value: Number(digitsOnly), normalized: digitsOnly },
         raw,
         decimalInfo
       );
     }
   }
+
   return { raw, confidence, parsed };
 }
 
@@ -414,22 +576,32 @@ async function readOnce({ save = true } = {}) {
     const ts = nowIsoLocal();
 
     els.confidence.textContent = `${Math.round(result.confidence)}%`;
-    const recovered = result.parsed?.decimalRecovered ? ' / 小数点補正' : '';
-    els.ocrText.textContent = `OCR原文: ${JSON.stringify(result.raw.trim())}${recovered}`;
+    const decimalInfoText = result.parsed?.decimalFixed
+      ? ` / 小数${els.decimalPlaces.value}桁固定`
+      : result.parsed?.decimalRecovered
+        ? ' / 小数点補正'
+        : '';
+
+    els.ocrText.textContent = `OCR原文: ${JSON.stringify(result.raw.trim())}${decimalInfoText}`;
 
     if (result.parsed) {
       els.currentValue.textContent = result.parsed.normalized;
       const lowConfidence = result.confidence < 35;
-      setStatus(lowConfidence ? 'LOW_CONFIDENCE' : 'OK');
-      if (save) addRecord(ts, result.parsed.normalized, lowConfidence ? 'LOW_CONFIDENCE' : 'OK');
+      const resultStatus = lowConfidence ? 'LOW_CONFIDENCE' : 'OK';
+      setStatus(loggingActive && els.recordMode.value === 'change'
+        ? `${resultStatus} / 変化監視中`
+        : resultStatus);
+      if (save) addMeasurement(ts, result.parsed.normalized, resultStatus);
     } else {
-      setStatus('OCR_ERROR');
-      if (save) addRecord(ts, '', 'OCR_ERROR');
+      setStatus(loggingActive && els.recordMode.value === 'change'
+        ? 'OCR_ERROR / 変化監視中'
+        : 'OCR_ERROR');
+      if (save) addMeasurement(ts, '', 'OCR_ERROR');
     }
   } catch (err) {
     console.error(err);
     setStatus('ERROR');
-    if (save) addRecord(nowIsoLocal(), '', 'ERROR');
+    if (save) addMeasurement(nowIsoLocal(), '', 'ERROR');
   } finally {
     isReading = false;
     els.singleBtn.disabled = !stream;
@@ -437,51 +609,139 @@ async function readOnce({ save = true } = {}) {
   }
 }
 
-function addRecord(timestamp, value, status) {
-  records.push({ timestamp, value, unit: els.unit.value, status });
-  els.recordCount.textContent = String(records.length);
-  els.lastTime.textContent = timeOnly(timestamp);
-  els.csvBtn.disabled = records.length === 0;
-
+function renderEntry(entry) {
   const tr = document.createElement('tr');
-  tr.innerHTML = `<td>${timeOnly(timestamp)}</td><td>${value || '—'}</td><td>${status}</td>`;
+
+  if (entry.type === 'measurement') {
+    const t1 = document.createElement('td');
+    const t2 = document.createElement('td');
+    const t3 = document.createElement('td');
+    t1.textContent = timeOnly(entry.timestamp);
+    t2.textContent = entry.value || '—';
+    t3.textContent = entry.status;
+    tr.append(t1, t2, t3);
+  } else if (entry.type === 'text') {
+    tr.className = 'note-row';
+    const td = document.createElement('td');
+    td.colSpan = 3;
+    td.textContent = `文字列: ${entry.text}`;
+    tr.append(td);
+  } else {
+    tr.className = 'blank-row';
+    const td = document.createElement('td');
+    td.colSpan = 3;
+    td.textContent = '（CSV空行）';
+    tr.append(td);
+  }
+
   els.logBody.prepend(tr);
 }
 
-function startLogging() {
-  if (timer) return;
-  const sec = Number(els.intervalSec.value);
+function refreshCsvState() {
+  els.csvBtn.disabled = entries.length === 0;
+}
+
+function addMeasurement(timestamp, value, status) {
+  const entry = {
+    type: 'measurement',
+    timestamp,
+    value,
+    unit: els.unit.value,
+    status
+  };
+  entries.push(entry);
+  measurementCount++;
+  els.recordCount.textContent = String(measurementCount);
+  els.lastTime.textContent = timeOnly(timestamp);
+  renderEntry(entry);
+  refreshCsvState();
+}
+
+function insertTextEntry() {
+  const text = els.noteText.value;
+  if (!text.trim()) return;
+  const entry = { type: 'text', text };
+  entries.push(entry);
+  renderEntry(entry);
+  els.noteText.value = '';
+  refreshCsvState();
+}
+
+function insertBlankEntry() {
+  const entry = { type: 'blank' };
+  entries.push(entry);
+  renderEntry(entry);
+  refreshCsvState();
+}
+
+async function startLogging() {
+  if (loggingActive || !stream) return;
+
+  loggingActive = true;
   els.startBtn.disabled = true;
   els.stopBtn.disabled = false;
-  els.intervalSec.disabled = true;
-  setStatus('連続記録中');
-  readOnce();
-  timer = setInterval(() => readOnce(), sec * 1000);
+  lockMeasurementControls(true);
+
+  if (els.recordMode.value === 'change') {
+    changeBaseline = captureFingerprint();
+    changeCandidate = null;
+    changeCandidateCount = 0;
+    setStatus('表示変化を監視中');
+
+    await readOnce({ save: true });
+    timer = setInterval(checkDisplayChange, 250);
+  } else {
+    const sec = Number(els.intervalSec.value);
+    setStatus('連続記録中');
+    await readOnce({ save: true });
+    timer = setInterval(() => readOnce({ save: true }), sec * 1000);
+  }
 }
 
 function stopLogging() {
   if (timer) clearInterval(timer);
   timer = null;
+  loggingActive = false;
+  changeBaseline = null;
+  changeCandidate = null;
+  changeCandidateCount = 0;
   els.startBtn.disabled = !stream;
   els.stopBtn.disabled = true;
-  els.intervalSec.disabled = false;
+  lockMeasurementControls(false);
+  updateModeUi();
   setStatus('停止');
 }
 
 function csvEscape(v) {
   const s = String(v ?? '');
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 function downloadCsv() {
-  const header = ['timestamp','value','unit','status'];
-  const rows = [header, ...records.map(r => [r.timestamp, r.value, r.unit, r.status])];
-  const csv = '\uFEFF' + rows.map(row => row.map(csvEscape).join(',')).join('\r\n');
+  const lines = ['timestamp,value,unit,status'];
+
+  for (const entry of entries) {
+    if (entry.type === 'measurement') {
+      lines.push([
+        entry.timestamp,
+        entry.value,
+        entry.unit,
+        entry.status
+      ].map(csvEscape).join(','));
+    } else if (entry.type === 'text') {
+      lines.push(csvEscape(entry.text));
+    } else if (entry.type === 'blank') {
+      lines.push('');
+    }
+  }
+
+  const csv = '\uFEFF' + lines.join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const d = new Date();
   const pad = n => String(n).padStart(2, '0');
+
   a.download = `swt-log-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.csv`;
   a.href = url;
   document.body.appendChild(a);
@@ -495,7 +755,13 @@ els.flipBtn.addEventListener('click', startCamera);
 els.singleBtn.addEventListener('click', () => readOnce({ save: true }));
 els.startBtn.addEventListener('click', startLogging);
 els.stopBtn.addEventListener('click', stopLogging);
+els.insertTextBtn.addEventListener('click', insertTextEntry);
+els.insertBlankBtn.addEventListener('click', insertBlankEntry);
 els.csvBtn.addEventListener('click', downloadCsv);
+
+els.noteText.addEventListener('keydown', event => {
+  if (event.key === 'Enter') insertTextEntry();
+});
 
 window.addEventListener('beforeunload', () => {
   if (timer) clearInterval(timer);
@@ -504,3 +770,4 @@ window.addEventListener('beforeunload', () => {
 });
 
 updateRoi();
+updateModeUi();
