@@ -1,51 +1,67 @@
 const els = {
   video: document.querySelector('#video'),
   roi: document.querySelector('#roi'),
-  settingsDetails: document.querySelector('#settingsDetails'),
-  outputFormat: document.querySelector('#outputFormat'),
-  tableHeadersField: document.querySelector('#tableHeadersField'),
-  tableHeaders: document.querySelector('#tableHeaders'),
-  labeledFields: document.querySelector('#labeledFields'),
-  rowHeaderName: document.querySelector('#rowHeaderName'),
-  measureHeaders: document.querySelector('#measureHeaders'),
-  rowLabels: document.querySelector('#rowLabels'),
+  outputSettings: document.querySelector('#outputSettings'),
+  outputMode: document.querySelector('#outputMode'),
+  tableSettings: document.querySelector('#tableSettings'),
+  fixedColumns: document.querySelector('#fixedColumns'),
+  columnCountField: document.querySelector('#columnCountField'),
+  columnCount: document.querySelector('#columnCount'),
+  columnHeaderMode: document.querySelector('#columnHeaderMode'),
+  columnHeadersField: document.querySelector('#columnHeadersField'),
+  columnHeaders: document.querySelector('#columnHeaders'),
+  fixedRows: document.querySelector('#fixedRows'),
+  rowCountField: document.querySelector('#rowCountField'),
+  rowCount: document.querySelector('#rowCount'),
+  rowHeaderMode: document.querySelector('#rowHeaderMode'),
+  rowHeadersField: document.querySelector('#rowHeadersField'),
+  rowHeaders: document.querySelector('#rowHeaders'),
+  cornerHeaderField: document.querySelector('#cornerHeaderField'),
+  cornerHeader: document.querySelector('#cornerHeader'),
+  fillRuleHint: document.querySelector('#fillRuleHint'),
+
+  advancedSettings: document.querySelector('#advancedSettings'),
   recordMode: document.querySelector('#recordMode'),
-  decimalPlaces: document.querySelector('#decimalPlaces'),
   intervalField: document.querySelector('#intervalField'),
   intervalSec: document.querySelector('#intervalSec'),
   sensitivityField: document.querySelector('#sensitivityField'),
   changeSensitivity: document.querySelector('#changeSensitivity'),
+  decimalPlaces: document.querySelector('#decimalPlaces'),
   unit: document.querySelector('#unit'),
+
   roiW: document.querySelector('#roiW'),
   roiH: document.querySelector('#roiH'),
   roiY: document.querySelector('#roiY'),
   roiWLabel: document.querySelector('#roiWLabel'),
   roiHLabel: document.querySelector('#roiHLabel'),
   roiYLabel: document.querySelector('#roiYLabel'),
+
   startCameraBtn: document.querySelector('#startCameraBtn'),
   flipBtn: document.querySelector('#flipBtn'),
   singleBtn: document.querySelector('#singleBtn'),
   startBtn: document.querySelector('#startBtn'),
   stopBtn: document.querySelector('#stopBtn'),
+  undoBtn: document.querySelector('#undoBtn'),
+  shareBtn: document.querySelector('#shareBtn'),
+  saveBtn: document.querySelector('#saveBtn'),
+
   currentValue: document.querySelector('#currentValue'),
   currentUnit: document.querySelector('#currentUnit'),
+  targetLine: document.querySelector('#targetLine'),
   status: document.querySelector('#status'),
   confidence: document.querySelector('#confidence'),
   recordCount: document.querySelector('#recordCount'),
   lastTime: document.querySelector('#lastTime'),
-  targetLine: document.querySelector('#targetLine'),
-  lastOperation: document.querySelector('#lastOperation'),
-  noteText: document.querySelector('#noteText'),
-  insertTextBtn: document.querySelector('#insertTextBtn'),
-  nextCellBtn: document.querySelector('#nextCellBtn'),
-  newRowBtn: document.querySelector('#newRowBtn'),
-  csvBtn: document.querySelector('#csvBtn'),
-  previewTable: document.querySelector('#previewTable'),
+  undoHint: document.querySelector('#undoHint'),
+
+  ocrMiniText: document.querySelector('#ocrMiniText'),
   ocrProgress: document.querySelector('#ocrProgress'),
   ocrText: document.querySelector('#ocrText'),
+  debugCanvas: document.querySelector('#debugCanvas'),
+  previewTable: document.querySelector('#previewTable'),
+
   captureCanvas: document.querySelector('#captureCanvas'),
   ocrCanvas: document.querySelector('#ocrCanvas'),
-  debugCanvas: document.querySelector('#debugCanvas'),
 };
 
 let stream = null;
@@ -57,16 +73,19 @@ let changeCheckBusy = false;
 let changeBaseline = null;
 let changeCandidate = null;
 let changeCandidateCount = 0;
-let measurementCount = 0;
 
 let schemaLocked = false;
-let lockedFormat = null;
-const logRows = [];
-let tableColumns = [];
-let tableRows = [];
-let tableCursorRow = 0;
-let tableCursorCol = 0;
+let config = null;
 let tableComplete = false;
+
+const simpleValues = [];
+const tableData = [];
+const history = [];
+
+let cursorRow = 0;
+let cursorCol = 0;
+let usedMaxRow = -1;
+let usedMaxCol = -1;
 
 const changeCanvas = document.createElement('canvas');
 changeCanvas.width = 96;
@@ -76,12 +95,21 @@ function setStatus(text) {
   els.status.textContent = text;
 }
 
-function setOperation(text) {
-  els.lastOperation.textContent = text;
-}
-
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function clampInt(value, min, max, fallback) {
+  const n = Number.parseInt(value, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+function parseList(value) {
+  return String(value || '')
+    .split(/[,\t\r\n]+/)
+    .map(item => item.trim())
+    .filter(Boolean);
 }
 
 function nowIsoLocal() {
@@ -90,8 +118,8 @@ function nowIsoLocal() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-function timeOnly(ts) {
-  return ts.slice(11);
+function timeOnly(timestamp) {
+  return timestamp ? timestamp.slice(11) : '--:--:--';
 }
 
 function updateRoi() {
@@ -103,140 +131,346 @@ function updateRoi() {
   els.roiYLabel.textContent = `${els.roiY.value}%`;
 }
 
-function parseList(value, fallback = []) {
-  const parts = String(value || '')
-    .split(/[,\t\r\n]+/)
-    .map(x => x.trim())
-    .filter(Boolean);
+function readConfigFromUi() {
+  const mode = els.outputMode.value;
 
-  return parts.length ? parts : fallback;
+  if (mode === 'simple') {
+    return { mode: 'simple' };
+  }
+
+  const fixedColumns = els.fixedColumns.checked;
+  const fixedRows = els.fixedRows.checked;
+
+  return {
+    mode: 'table',
+    fixedColumns,
+    columnCount: fixedColumns
+      ? clampInt(els.columnCount.value, 1, 200, 3)
+      : null,
+    columnHeaderMode: els.columnHeaderMode.value,
+    columnHeaders: parseList(els.columnHeaders.value),
+
+    fixedRows,
+    rowCount: fixedRows
+      ? clampInt(els.rowCount.value, 1, 1000, 3)
+      : null,
+    rowHeaderMode: els.rowHeaderMode.value,
+    rowHeaders: parseList(els.rowHeaders.value),
+
+    cornerHeader: els.cornerHeader.value.trim(),
+  };
 }
 
-function parseTableHeaders() {
-  return parseList(els.tableHeaders.value, ['測定1', '測定2', '測定3']);
+function getActiveConfig() {
+  return schemaLocked ? config : readConfigFromUi();
 }
 
-function parseMeasureHeaders() {
-  return parseList(els.measureHeaders.value, ['1回目', '2回目', '3回目']);
+function getColumnLabel(index, cfg = getActiveConfig()) {
+  if (cfg.mode !== 'table' || cfg.columnHeaderMode === 'none') {
+    return `列${index + 1}`;
+  }
+
+  if (cfg.columnHeaderMode === 'custom') {
+    return cfg.columnHeaders[index] || String(index + 1);
+  }
+
+  return String(index + 1);
 }
 
-function parseRowLabels() {
-  return parseList(els.rowLabels.value, ['A', 'B', 'C']);
+function getRowLabel(index, cfg = getActiveConfig()) {
+  if (cfg.mode !== 'table' || cfg.rowHeaderMode === 'none') {
+    return `行${index + 1}`;
+  }
+
+  if (cfg.rowHeaderMode === 'custom') {
+    return cfg.rowHeaders[index] || String(index + 1);
+  }
+
+  return String(index + 1);
 }
 
-function updateSettingsUi() {
+function updateOutputSettingsUi() {
+  const cfg = readConfigFromUi();
+  const tableMode = cfg.mode === 'table';
+
+  els.tableSettings.classList.toggle('hidden-field', !tableMode);
+
+  if (!tableMode) {
+    els.fillRuleHint.textContent = '';
+    updateTargetLine();
+    return;
+  }
+
+  els.columnCountField.classList.toggle('hidden-field', !cfg.fixedColumns);
+  els.rowCountField.classList.toggle('hidden-field', !cfg.fixedRows);
+  els.columnHeadersField.classList.toggle(
+    'hidden-field',
+    cfg.columnHeaderMode !== 'custom'
+  );
+  els.rowHeadersField.classList.toggle(
+    'hidden-field',
+    cfg.rowHeaderMode !== 'custom'
+  );
+
+  const showCorner =
+    cfg.columnHeaderMode !== 'none' &&
+    cfg.rowHeaderMode !== 'none';
+
+  els.cornerHeaderField.classList.toggle('hidden-field', !showCorner);
+
+  if (cfg.fixedColumns && cfg.fixedRows) {
+    els.fillRuleHint.textContent =
+      `左→右に記録し、${cfg.columnCount}列ごとに次の行へ進みます。最大 ${cfg.columnCount}列 × ${cfg.rowCount}行で完了します。`;
+  } else if (cfg.fixedColumns) {
+    els.fillRuleHint.textContent =
+      `左→右に記録し、${cfg.columnCount}列ごとに次の行へ進みます。行数は自動で増えます。`;
+  } else if (cfg.fixedRows) {
+    els.fillRuleHint.textContent =
+      `上→下に記録し、${cfg.rowCount}行ごとに次の列へ進みます。列数は自動で増えます。`;
+  } else {
+    els.fillRuleHint.textContent =
+      '列数・行数とも未指定の場合は、1行のまま右方向へ追加します。';
+  }
+
+  updateTargetLine();
+  renderPreview();
+}
+
+function updateAdvancedUi() {
   const changeMode = els.recordMode.value === 'change';
   els.intervalField.classList.toggle('hidden-field', changeMode);
   els.sensitivityField.classList.toggle('hidden-field', !changeMode);
-
-  const format = schemaLocked ? lockedFormat : els.outputFormat.value;
-  els.tableHeadersField.classList.toggle('hidden-field', format !== 'table');
-  els.labeledFields.classList.toggle('hidden-field', format !== 'labeled');
-
   els.startBtn.textContent = changeMode ? '監視開始' : '連続記録開始';
-
-  const tableLike = format === 'table' || format === 'labeled';
-  els.nextCellBtn.disabled = !tableLike || tableComplete;
-  els.newRowBtn.disabled = tableComplete && format === 'labeled';
-
-  updateTargetLine();
 }
 
-function ensureSchema() {
+function lockSchema() {
   if (schemaLocked) return;
 
-  lockedFormat = els.outputFormat.value;
+  config = readConfigFromUi();
   schemaLocked = true;
+
+  const controls = [
+    els.outputMode,
+    els.fixedColumns,
+    els.columnCount,
+    els.columnHeaderMode,
+    els.columnHeaders,
+    els.fixedRows,
+    els.rowCount,
+    els.rowHeaderMode,
+    els.rowHeaders,
+    els.cornerHeader,
+  ];
+
+  controls.forEach(control => {
+    control.disabled = true;
+  });
+
+  cursorRow = 0;
+  cursorCol = 0;
   tableComplete = false;
-
-  els.outputFormat.disabled = true;
-  els.tableHeaders.disabled = true;
-  els.rowHeaderName.disabled = true;
-  els.measureHeaders.disabled = true;
-  els.rowLabels.disabled = true;
-
-  if (lockedFormat === 'table') {
-    tableColumns = parseTableHeaders();
-    tableRows = [];
-    tableCursorRow = 0;
-    tableCursorCol = 0;
-  }
-
-  if (lockedFormat === 'labeled') {
-    const firstHeader = els.rowHeaderName.value.trim() || '場所';
-    const measures = parseMeasureHeaders();
-    const labels = parseRowLabels();
-
-    tableColumns = [firstHeader, ...measures];
-    tableRows = labels.map(label => [
-      label,
-      ...Array(measures.length).fill('')
-    ]);
-
-    tableCursorRow = 0;
-    tableCursorCol = 1;
-  }
-
-  updateSettingsUi();
+  updateTargetLine();
   renderPreview();
-  updateCsvState();
 }
 
-function describeCursor() {
-  const format = schemaLocked ? lockedFormat : els.outputFormat.value;
+function unlockAdvancedControls(locked) {
+  [
+    els.recordMode,
+    els.intervalSec,
+    els.changeSensitivity,
+    els.decimalPlaces,
+    els.unit,
+    els.roiW,
+    els.roiH,
+    els.roiY,
+  ].forEach(control => {
+    control.disabled = locked;
+  });
+}
 
-  if (format === 'log') {
-    return 'ログ表';
+function describeTarget(row = cursorRow, col = cursorCol) {
+  const cfg = getActiveConfig();
+
+  if (cfg.mode === 'simple') {
+    return `CSV ${simpleValues.length + 1}番目`;
   }
 
-  const columns = schemaLocked
-    ? tableColumns
-    : format === 'labeled'
-      ? [
-          els.rowHeaderName.value.trim() || '場所',
-          ...parseMeasureHeaders()
-        ]
-      : parseTableHeaders();
-
-  if (format === 'labeled') {
-    const labels = schemaLocked
-      ? tableRows.map(row => row[0])
-      : parseRowLabels();
-
-    if (tableComplete) {
-      return '表入力完了';
-    }
-
-    const rowLabel = labels[tableCursorRow] ?? `行${tableCursorRow + 1}`;
-    const column = columns[tableCursorCol] ?? columns[1] ?? '測定';
-    return `${columns[0] || '場所'} ${rowLabel} / ${column}`;
+  if (tableComplete) {
+    return '表入力完了';
   }
 
-  const column = columns[tableCursorCol] ?? columns[0] ?? '測定';
-  return `${tableCursorRow + 1}行目 / ${column}`;
+  const rowLabel = getRowLabel(row, cfg);
+  const colLabel = getColumnLabel(col, cfg);
+
+  return `${rowLabel} / ${colLabel}`;
 }
 
 function updateTargetLine() {
-  els.targetLine.textContent = describeCursor();
+  els.targetLine.textContent = describeTarget();
 }
 
-function lockMeasurementControls(locked) {
-  els.recordMode.disabled = locked;
-  els.decimalPlaces.disabled = locked;
-  els.intervalSec.disabled = locked;
-  els.changeSensitivity.disabled = locked;
-  els.unit.disabled = locked;
-  els.roiW.disabled = locked;
-  els.roiH.disabled = locked;
-  els.roiY.disabled = locked;
+function getTableCell(row, col) {
+  return tableData[row]?.[col] ?? '';
+}
 
-  if (!schemaLocked) {
-    els.outputFormat.disabled = locked;
-    els.tableHeaders.disabled = locked;
-    els.rowHeaderName.disabled = locked;
-    els.measureHeaders.disabled = locked;
-    els.rowLabels.disabled = locked;
+function setTableCell(row, col, value) {
+  while (tableData.length <= row) {
+    tableData.push([]);
   }
+
+  while (tableData[row].length <= col) {
+    tableData[row].push('');
+  }
+
+  tableData[row][col] = value;
+  usedMaxRow = Math.max(usedMaxRow, row);
+  usedMaxCol = Math.max(usedMaxCol, col);
+}
+
+function recomputeUsedBounds() {
+  usedMaxRow = -1;
+  usedMaxCol = -1;
+
+  for (let r = 0; r < tableData.length; r++) {
+    for (let c = 0; c < (tableData[r]?.length || 0); c++) {
+      if (String(tableData[r][c] ?? '') !== '') {
+        usedMaxRow = Math.max(usedMaxRow, r);
+        usedMaxCol = Math.max(usedMaxCol, c);
+      }
+    }
+  }
+}
+
+function advanceCursorAfterWrite() {
+  const cfg = config;
+
+  if (cfg.mode !== 'table') return;
+
+  if (cfg.fixedColumns) {
+    cursorCol += 1;
+
+    if (cursorCol >= cfg.columnCount) {
+      cursorCol = 0;
+      cursorRow += 1;
+    }
+
+    if (cfg.fixedRows && cursorRow >= cfg.rowCount) {
+      tableComplete = true;
+    }
+
+    return;
+  }
+
+  if (cfg.fixedRows) {
+    cursorRow += 1;
+
+    if (cursorRow >= cfg.rowCount) {
+      cursorRow = 0;
+      cursorCol += 1;
+    }
+
+    return;
+  }
+
+  cursorCol += 1;
+}
+
+function saveMeasurement(value, timestamp, status) {
+  lockSchema();
+
+  if (config.mode === 'simple') {
+    const index = simpleValues.length;
+
+    simpleValues.push(value);
+
+    history.push({
+      kind: 'simple',
+      index,
+      value,
+      timestamp,
+      status,
+      target: `CSV ${index + 1}番目`,
+    });
+  } else {
+    if (tableComplete) {
+      setStatus('表入力完了');
+      return false;
+    }
+
+    const row = cursorRow;
+    const col = cursorCol;
+    const previous = getTableCell(row, col);
+    const target = describeTarget(row, col);
+
+    setTableCell(row, col, value);
+
+    history.push({
+      kind: 'table',
+      row,
+      col,
+      previous,
+      value,
+      timestamp,
+      status,
+      target,
+    });
+
+    advanceCursorAfterWrite();
+  }
+
+  updateAfterDataChange();
+
+  if (tableComplete && loggingActive) {
+    stopLogging(true);
+    setStatus('測定完了');
+  }
+
+  return true;
+}
+
+function undoLast() {
+  const action = history.pop();
+  if (!action) return;
+
+  if (action.kind === 'simple') {
+    simpleValues.splice(action.index, 1);
+  } else {
+    setTableCell(action.row, action.col, action.previous);
+    cursorRow = action.row;
+    cursorCol = action.col;
+    tableComplete = false;
+    recomputeUsedBounds();
+  }
+
+  if (loggingActive && els.recordMode.value === 'change' && stream) {
+    try {
+      changeBaseline = captureFingerprint();
+      changeCandidate = null;
+      changeCandidateCount = 0;
+    } catch (err) {
+      console.debug('baseline reset skipped', err);
+    }
+  }
+
+  setStatus('1つ戻しました');
+  updateAfterDataChange();
+}
+
+function updateAfterDataChange() {
+  els.recordCount.textContent = String(history.length);
+
+  const last = history[history.length - 1];
+  els.lastTime.textContent = last ? timeOnly(last.timestamp) : '--:--:--';
+
+  els.undoBtn.disabled = history.length === 0;
+  els.undoHint.textContent = last ? `戻す: ${last.target}` : '';
+
+  const hasData = history.length > 0;
+  els.shareBtn.disabled = !hasData;
+  els.saveBtn.disabled = !hasData;
+
+  updateTargetLine();
+  renderPreview();
 }
 
 async function startCamera() {
@@ -285,9 +519,12 @@ async function startCamera() {
     await sleep(350);
 
     els.singleBtn.disabled = false;
-    els.startBtn.disabled = false;
+    els.startBtn.disabled = tableComplete;
     els.flipBtn.disabled = false;
-    els.settingsDetails.open = false;
+
+    els.outputSettings.open = false;
+    els.advancedSettings.open = false;
+
     setStatus('カメラ準備完了');
   } catch (err) {
     console.error(err);
@@ -413,10 +650,7 @@ function captureFingerprint() {
     changeCanvas.height
   ).data;
 
-  const gray = new Float32Array(
-    changeCanvas.width * changeCanvas.height
-  );
-
+  const gray = new Float32Array(changeCanvas.width * changeCanvas.height);
   let sum = 0;
 
   for (let p = 0, i = 0; p < gray.length; p++, i += 4) {
@@ -453,11 +687,11 @@ function fingerprintDistance(a, b) {
 function changeThresholds() {
   switch (els.changeSensitivity.value) {
     case 'high':
-      return { changed: 0.005, stable: 0.004 };
+      return { changed: 0.0028, stable: 0.0030 };
     case 'low':
-      return { changed: 0.016, stable: 0.009 };
+      return { changed: 0.0110, stable: 0.0070 };
     default:
-      return { changed: 0.009, stable: 0.006 };
+      return { changed: 0.0055, stable: 0.0045 };
   }
 }
 
@@ -507,6 +741,7 @@ async function checkDisplayChange() {
       changeBaseline = fp;
       changeCandidate = null;
       changeCandidateCount = 0;
+
       setStatus('表示変化を検出');
       await readOnce({ save: true });
     }
@@ -547,10 +782,7 @@ function buildAdaptiveBinary(srcCanvas) {
 
   const out = new Uint8ClampedArray(w * h * 4);
   const binary = new Uint8Array(w * h);
-  const radius = Math.max(
-    14,
-    Math.round(Math.min(w, h) * 0.06)
-  );
+  const radius = Math.max(14, Math.round(Math.min(w, h) * 0.06));
   const offset = 9;
 
   for (let y = 0; y < h; y++) {
@@ -629,20 +861,13 @@ function findDecimalAndDigitGroups(binary, w, h) {
     }
   }
 
-  const gapJoin = Math.max(
-    6,
-    Math.floor(h * 0.035)
-  );
-
+  const gapJoin = Math.max(6, Math.floor(h * 0.035));
   const merged = [];
 
   for (const group of rawGroups) {
     const prev = merged[merged.length - 1];
 
-    if (
-      prev &&
-      group[0] - prev[1] <= gapJoin
-    ) {
+    if (prev && group[0] - prev[1] <= gapJoin) {
       prev[1] = group[1];
     } else {
       merged.push([...group]);
@@ -726,10 +951,7 @@ function findDecimalAndDigitGroups(binary, w, h) {
       const relW = bw / w;
 
       if (
-        area >= Math.max(
-          15,
-          w * h * 0.00008
-        ) &&
+        area >= Math.max(15, w * h * 0.00008) &&
         relH >= 0.025 &&
         relH <= 0.18 &&
         relW >= 0.008 &&
@@ -763,53 +985,28 @@ function findDecimalAndDigitGroups(binary, w, h) {
 }
 
 function renderOcrCanvas(pre) {
-  const pad = Math.round(
-    Math.max(30, pre.h * 0.12)
-  );
+  const pad = Math.round(Math.max(30, pre.h * 0.12));
 
-  els.ocrCanvas.width =
-    pre.w + pad * 2;
+  els.ocrCanvas.width = pre.w + pad * 2;
+  els.ocrCanvas.height = pre.h + pad * 2;
 
-  els.ocrCanvas.height =
-    pre.h + pad * 2;
-
-  const ctx =
-    els.ocrCanvas.getContext(
-      '2d',
-      { willReadFrequently: true }
-    );
+  const ctx = els.ocrCanvas.getContext('2d', { willReadFrequently: true });
 
   ctx.fillStyle = '#fff';
-  ctx.fillRect(
-    0,
-    0,
-    els.ocrCanvas.width,
-    els.ocrCanvas.height
-  );
+  ctx.fillRect(0, 0, els.ocrCanvas.width, els.ocrCanvas.height);
 
   ctx.putImageData(
-    new ImageData(
-      pre.out,
-      pre.w,
-      pre.h
-    ),
+    new ImageData(pre.out, pre.w, pre.h),
     pad,
     pad
   );
 
-  els.debugCanvas.width =
-    els.ocrCanvas.width;
-
-  els.debugCanvas.height =
-    els.ocrCanvas.height;
+  els.debugCanvas.width = els.ocrCanvas.width;
+  els.debugCanvas.height = els.ocrCanvas.height;
 
   els.debugCanvas
     .getContext('2d')
-    .drawImage(
-      els.ocrCanvas,
-      0,
-      0
-    );
+    .drawImage(els.ocrCanvas, 0, 0);
 
   return els.ocrCanvas;
 }
@@ -827,24 +1024,15 @@ function parseValue(text) {
 
   if (!cleaned) return null;
 
-  const firstDot =
-    cleaned.indexOf('.');
+  const firstDot = cleaned.indexOf('.');
 
   if (firstDot >= 0) {
     cleaned =
-      cleaned.slice(
-        0,
-        firstDot + 1
-      ) +
-      cleaned
-        .slice(firstDot + 1)
-        .replace(/\./g, '');
+      cleaned.slice(0, firstDot + 1) +
+      cleaned.slice(firstDot + 1).replace(/\./g, '');
   }
 
-  if (
-    !/^\d{1,6}(\.\d{1,3})?$/
-      .test(cleaned)
-  ) {
+  if (!/^\d{1,6}(\.\d{1,3})?$/.test(cleaned)) {
     return null;
   }
 
@@ -858,18 +1046,11 @@ function parseValue(text) {
     return null;
   }
 
-  return {
-    value,
-    normalized: cleaned
-  };
+  return { value, normalized: cleaned };
 }
 
-function formatFixedDecimals(
-  digits,
-  places
-) {
-  const safeDigits =
-    digits.replace(/\D/g, '');
+function formatFixedDecimals(digits, places) {
+  const safeDigits = digits.replace(/\D/g, '');
 
   if (!safeDigits) return null;
 
@@ -877,69 +1058,31 @@ function formatFixedDecimals(
     return String(Number(safeDigits));
   }
 
-  const padded =
-    safeDigits.padStart(
-      places + 1,
-      '0'
-    );
-
-  const splitAt =
-    padded.length - places;
-
+  const padded = safeDigits.padStart(places + 1, '0');
+  const splitAt = padded.length - places;
   const whole =
-    padded
-      .slice(0, splitAt)
-      .replace(
-        /^0+(?=\d)/,
-        ''
-      ) || '0';
+    padded.slice(0, splitAt).replace(/^0+(?=\d)/, '') || '0';
 
-  return (
-    whole +
-    '.' +
-    padded.slice(splitAt)
-  );
+  return `${whole}.${padded.slice(splitAt)}`;
 }
 
-function applyDecimalPolicy(
-  parsed,
-  rawText,
-  decimalInfo
-) {
-  const policy =
-    els.decimalPlaces.value;
-
-  const rawDigits =
-    normalizeText(rawText)
-      .replace(/\D/g, '');
-
+function applyDecimalPolicy(parsed, rawText, decimalInfo) {
+  const policy = els.decimalPlaces.value;
+  const rawDigits = normalizeText(rawText).replace(/\D/g, '');
   const parsedDigits =
-    parsed?.normalized
-      ?.replace(/\D/g, '') || '';
+    parsed?.normalized?.replace(/\D/g, '') || '';
 
-  const digits =
-    rawDigits || parsedDigits;
+  const digits = rawDigits || parsedDigits;
 
   if (policy !== 'auto') {
-    const places =
-      Number(policy);
+    const places = Number(policy);
+    const normalized = formatFixedDecimals(digits, places);
 
-    const normalized =
-      formatFixedDecimals(
-        digits,
-        places
-      );
+    if (!normalized) return null;
 
-    if (!normalized) {
-      return null;
-    }
+    const value = Number(normalized);
 
-    const value =
-      Number(normalized);
-
-    if (
-      !Number.isFinite(value)
-    ) {
+    if (!Number.isFinite(value)) {
       return null;
     }
 
@@ -950,10 +1093,7 @@ function applyDecimalPolicy(
     };
   }
 
-  if (
-    parsed?.normalized
-      ?.includes('.')
-  ) {
+  if (parsed?.normalized?.includes('.')) {
     return parsed;
   }
 
@@ -965,43 +1105,27 @@ function applyDecimalPolicy(
     return parsed;
   }
 
-  const groups =
-    decimalInfo.digitGroups;
-
-  const dotX =
-    decimalInfo.decimal.x;
-
+  const groups = decimalInfo.digitGroups;
+  const dotX = decimalInfo.decimal.x;
   let insertAt = -1;
 
-  if (
-    groups.length ===
-    digits.length
-  ) {
+  if (groups.length === digits.length) {
     const centers =
-      groups.map(
-        group =>
-          (group[0] +
-           group[1]) / 2
-      );
+      groups.map(group => (group[0] + group[1]) / 2);
 
     insertAt =
-      centers.filter(
-        x => x < dotX
-      ).length;
+      centers.filter(x => x < dotX).length;
   }
 
   if (
     insertAt <= 0 ||
-    insertAt >=
-      digits.length
+    insertAt >= digits.length
   ) {
     return parsed;
   }
 
   const recovered =
-    digits.slice(0, insertAt) +
-    '.' +
-    digits.slice(insertAt);
+    `${digits.slice(0, insertAt)}.${digits.slice(insertAt)}`;
 
   return {
     value: Number(recovered),
@@ -1010,53 +1134,34 @@ function applyDecimalPolicy(
   };
 }
 
-async function recognizeCanvas(
-  canvas,
-  decimalInfo
-) {
-  const w = await ensureWorker();
-  const result =
-    await w.recognize(canvas);
+async function recognizeCanvas(canvas, decimalInfo) {
+  const activeWorker = await ensureWorker();
+  const result = await activeWorker.recognize(canvas);
 
-  const raw =
-    result?.data?.text ?? '';
+  const raw = result?.data?.text ?? '';
+  const confidence = Number(result?.data?.confidence ?? 0);
 
-  const confidence =
-    Number(
-      result?.data
-        ?.confidence ?? 0
-    );
+  let parsed = parseValue(raw);
 
-  let parsed =
-    parseValue(raw);
-
-  parsed =
-    applyDecimalPolicy(
-      parsed,
-      raw,
-      decimalInfo
-    );
+  parsed = applyDecimalPolicy(
+    parsed,
+    raw,
+    decimalInfo
+  );
 
   if (!parsed) {
     const digitsOnly =
-      normalizeText(raw)
-        .replace(/\D/g, '');
+      normalizeText(raw).replace(/\D/g, '');
 
-    if (
-      /^\d{1,7}$/
-        .test(digitsOnly)
-    ) {
-      parsed =
-        applyDecimalPolicy(
-          {
-            value:
-              Number(digitsOnly),
-            normalized:
-              digitsOnly
-          },
-          raw,
-          decimalInfo
-        );
+    if (/^\d{1,7}$/.test(digitsOnly)) {
+      parsed = applyDecimalPolicy(
+        {
+          value: Number(digitsOnly),
+          normalized: digitsOnly
+        },
+        raw,
+        decimalInfo
+      );
     }
   }
 
@@ -1067,476 +1172,8 @@ async function recognizeCanvas(
   };
 }
 
-function ensureFreeTableRow(index) {
-  while (tableRows.length <= index) {
-    tableRows.push(
-      Array(tableColumns.length)
-        .fill('')
-    );
-  }
-
-  return tableRows[index];
-}
-
-function currentTableTarget() {
-  return {
-    row: tableCursorRow,
-    col: tableCursorCol,
-    description: describeCursor()
-  };
-}
-
-function markTableComplete() {
-  tableComplete = true;
-  updateTargetLine();
-  updateSettingsUi();
-  setStatus('表入力完了');
-  setOperation('最終セル保存 → 表入力完了');
-}
-
-function advanceAfterWrite() {
-  const format = lockedFormat;
-  let delimiter = ',';
-
-  if (format === 'labeled') {
-    if (
-      tableCursorCol <
-      tableColumns.length - 1
-    ) {
-      tableCursorCol += 1;
-      delimiter = ',';
-    } else {
-      tableCursorRow += 1;
-      tableCursorCol = 1;
-      delimiter = '\\n';
-
-      if (
-        tableCursorRow >=
-        tableRows.length
-      ) {
-        markTableComplete();
-      }
-    }
-  } else {
-    if (
-      tableCursorCol <
-      tableColumns.length - 1
-    ) {
-      tableCursorCol += 1;
-      delimiter = ',';
-    } else {
-      tableCursorRow += 1;
-      tableCursorCol = 0;
-      delimiter = '\\n';
-      ensureFreeTableRow(
-        tableCursorRow
-      );
-    }
-  }
-
-  updateTargetLine();
-  renderPreview();
-  return delimiter;
-}
-
-function writeTableCell(
-  content,
-  sourceLabel
-) {
-  ensureSchema();
-
-  if (tableComplete) {
-    setOperation('表入力完了のため未保存');
-    return false;
-  }
-
-  if (!tableColumns.length) {
-    return false;
-  }
-
-  const target =
-    currentTableTarget();
-
-  let row;
-
-  if (lockedFormat === 'labeled') {
-    row =
-      tableRows[
-        tableCursorRow
-      ];
-
-    if (!row) {
-      markTableComplete();
-      return false;
-    }
-  } else {
-    row =
-      ensureFreeTableRow(
-        tableCursorRow
-      );
-  }
-
-  row[tableCursorCol] =
-    String(content ?? '');
-
-  const delimiter =
-    advanceAfterWrite();
-
-  setOperation(
-    `${sourceLabel} → ${target.description} ／ ${delimiter === ',' ? ', 次セル' : '\\n 次行'}`
-  );
-
-  renderPreview();
-  updateCsvState();
-  return true;
-}
-
-function moveNextCell() {
-  ensureSchema();
-
-  if (
-    lockedFormat !== 'table' &&
-    lockedFormat !== 'labeled'
-  ) {
-    setOperation('ログ表では , 操作は不要');
-    return;
-  }
-
-  if (tableComplete) {
-    setOperation('表入力完了');
-    return;
-  }
-
-  const before =
-    describeCursor();
-
-  let delimiter = ',';
-
-  if (
-    tableCursorCol <
-    tableColumns.length - 1
-  ) {
-    tableCursorCol += 1;
-  } else {
-    delimiter = '\\n';
-
-    if (lockedFormat === 'labeled') {
-      tableCursorRow += 1;
-      tableCursorCol = 1;
-
-      if (
-        tableCursorRow >=
-        tableRows.length
-      ) {
-        markTableComplete();
-        return;
-      }
-    } else {
-      tableCursorRow += 1;
-      tableCursorCol = 0;
-      ensureFreeTableRow(
-        tableCursorRow
-      );
-    }
-  }
-
-  setOperation(
-    `${before} を空欄 → ${delimiter === ',' ? ', 次セル' : '\\n 次行'}`
-  );
-
-  updateTargetLine();
-  renderPreview();
-  updateCsvState();
-}
-
-function moveNextRow() {
-  ensureSchema();
-
-  if (lockedFormat === 'log') {
-    logRows.push({
-      kind: 'blank'
-    });
-
-    setOperation('\\n → CSVに空行を追加');
-    renderPreview();
-    updateCsvState();
-    return;
-  }
-
-  if (tableComplete) {
-    setOperation('表入力完了');
-    return;
-  }
-
-  const before =
-    describeCursor();
-
-  tableCursorRow += 1;
-  tableCursorCol =
-    lockedFormat === 'labeled'
-      ? 1
-      : 0;
-
-  if (
-    lockedFormat === 'labeled' &&
-    tableCursorRow >=
-      tableRows.length
-  ) {
-    markTableComplete();
-    return;
-  }
-
-  if (lockedFormat === 'table') {
-    ensureFreeTableRow(
-      tableCursorRow
-    );
-  }
-
-  setOperation(
-    `${before} から \\n → 次行`
-  );
-
-  updateTargetLine();
-  renderPreview();
-  updateCsvState();
-}
-
-function addLogRow(row) {
-  ensureSchema();
-  logRows.push(row);
-  renderPreview();
-  updateCsvState();
-}
-
-function addMeasurement(
-  timestamp,
-  value,
-  status
-) {
-  ensureSchema();
-
-  let saved = false;
-
-  if (
-    lockedFormat === 'table' ||
-    lockedFormat === 'labeled'
-  ) {
-    if (!value) return;
-
-    saved =
-      writeTableCell(
-        value,
-        `測定値 ${value}`
-      );
-  } else {
-    addLogRow({
-      kind: 'measurement',
-      timestamp,
-      value,
-      unit: els.unit.value,
-      status,
-      note: ''
-    });
-
-    setOperation(
-      `測定値 ${value || 'ERROR'} → 新しいCSV行（\\n）`
-    );
-
-    saved = true;
-  }
-
-  if (saved && value) {
-    measurementCount += 1;
-    els.recordCount.textContent =
-      String(measurementCount);
-  }
-
-  if (saved) {
-    els.lastTime.textContent =
-      timeOnly(timestamp);
-  }
-}
-
-function insertTextEntry() {
-  const text =
-    els.noteText.value;
-
-  if (!text) return;
-
-  ensureSchema();
-
-  if (
-    lockedFormat === 'table' ||
-    lockedFormat === 'labeled'
-  ) {
-    writeTableCell(
-      text,
-      '文字列'
-    );
-  } else {
-    addLogRow({
-      kind: 'note',
-      timestamp: nowIsoLocal(),
-      value: '',
-      unit: '',
-      status: 'NOTE',
-      note: text
-    });
-
-    setOperation(
-      '文字列 → 新しいCSV行（\\n）'
-    );
-  }
-
-  els.noteText.value = '';
-}
-
-function renderPreview() {
-  els.previewTable.textContent = '';
-
-  if (!schemaLocked) {
-    const tr =
-      document.createElement('tr');
-
-    const td =
-      document.createElement('td');
-
-    td.textContent =
-      '最初の記録時に出力形式が確定します。';
-
-    tr.append(td);
-    els.previewTable.append(tr);
-    return;
-  }
-
-  const thead =
-    document.createElement('thead');
-
-  const headRow =
-    document.createElement('tr');
-
-  if (lockedFormat === 'log') {
-    for (
-      const header of [
-        'timestamp',
-        'value',
-        'unit',
-        'status',
-        'note'
-      ]
-    ) {
-      const th =
-        document.createElement('th');
-
-      th.textContent = header;
-      headRow.append(th);
-    }
-
-    thead.append(headRow);
-    els.previewTable.append(thead);
-
-    const tbody =
-      document.createElement('tbody');
-
-    for (const row of logRows) {
-      const tr =
-        document.createElement('tr');
-
-      if (row.kind === 'blank') {
-        const td =
-          document.createElement('td');
-
-        td.colSpan = 5;
-        td.innerHTML = '&nbsp;';
-        tr.append(td);
-      } else {
-        for (
-          const value of [
-            row.timestamp,
-            row.value,
-            row.unit,
-            row.status,
-            row.note
-          ]
-        ) {
-          const td =
-            document.createElement('td');
-
-          td.textContent =
-            value ?? '';
-
-          tr.append(td);
-        }
-      }
-
-      tbody.append(tr);
-    }
-
-    els.previewTable.append(tbody);
-    return;
-  }
-
-  for (const header of tableColumns) {
-    const th =
-      document.createElement('th');
-
-    th.textContent = header;
-    headRow.append(th);
-  }
-
-  thead.append(headRow);
-  els.previewTable.append(thead);
-
-  const tbody =
-    document.createElement('tbody');
-
-  for (
-    let r = 0;
-    r < tableRows.length;
-    r++
-  ) {
-    const tr =
-      document.createElement('tr');
-
-    for (
-      let c = 0;
-      c < tableColumns.length;
-      c++
-    ) {
-      const td =
-        document.createElement('td');
-
-      td.textContent =
-        tableRows[r]?.[c] ?? '';
-
-      if (
-        lockedFormat === 'labeled' &&
-        c === 0
-      ) {
-        td.classList.add('row-label');
-      }
-
-      if (
-        !tableComplete &&
-        r === tableCursorRow &&
-        c === tableCursorCol
-      ) {
-        td.classList.add('active-cell');
-      }
-
-      tr.append(td);
-    }
-
-    tbody.append(tr);
-  }
-
-  els.previewTable.append(tbody);
-}
-
-async function readOnce({
-  save = true
-} = {}) {
-  if (isReading) return;
+async function readOnce({ save = true } = {}) {
+  if (isReading || tableComplete) return;
 
   isReading = true;
   els.singleBtn.disabled = true;
@@ -1544,11 +1181,8 @@ async function readOnce({
   try {
     setStatus('読み取り中');
 
-    const src =
-      captureRoi();
-
-    const pre =
-      buildAdaptiveBinary(src);
+    const src = captureRoi();
+    const pre = buildAdaptiveBinary(src);
 
     const decimalInfo =
       findDecimalAndDigitGroups(
@@ -1557,8 +1191,7 @@ async function readOnce({
         pre.h
       );
 
-    const ocrCanvas =
-      renderOcrCanvas(pre);
+    const ocrCanvas = renderOcrCanvas(pre);
 
     const result =
       await recognizeCanvas(
@@ -1566,8 +1199,7 @@ async function readOnce({
         decimalInfo
       );
 
-    const ts =
-      nowIsoLocal();
+    const ts = nowIsoLocal();
 
     els.confidence.textContent =
       `${Math.round(result.confidence)}%`;
@@ -1583,75 +1215,43 @@ async function readOnce({
       `OCR原文: ${JSON.stringify(result.raw.trim())}${decimalInfoText}`;
 
     if (result.parsed) {
-      els.currentValue.textContent =
-        result.parsed.normalized;
+      const value = result.parsed.normalized;
 
-      const lowConfidence =
-        result.confidence < 35;
+      els.currentValue.textContent = value;
+      els.ocrMiniText.textContent = value;
 
-      const resultStatus =
-        lowConfidence
-          ? 'LOW_CONFIDENCE'
-          : 'OK';
+      const lowConfidence = result.confidence < 35;
+      const resultStatus = lowConfidence ? 'LOW_CONFIDENCE' : 'OK';
 
       setStatus(
-        loggingActive &&
-        els.recordMode.value === 'change'
-          ? `${resultStatus} / 変化監視中`
+        loggingActive && els.recordMode.value === 'change'
+          ? `${resultStatus} / 監視中`
           : resultStatus
       );
 
       if (save) {
-        addMeasurement(
+        saveMeasurement(
+          value,
           ts,
-          result.parsed.normalized,
           resultStatus
         );
       }
     } else {
+      els.ocrMiniText.textContent = 'ERROR';
+
       setStatus(
-        loggingActive &&
-        els.recordMode.value === 'change'
-          ? 'OCR_ERROR / 変化監視中'
+        loggingActive && els.recordMode.value === 'change'
+          ? 'OCR_ERROR / 監視中'
           : 'OCR_ERROR'
       );
-
-      if (
-        save &&
-        (
-          schemaLocked
-            ? lockedFormat
-            : els.outputFormat.value
-        ) === 'log'
-      ) {
-        addMeasurement(
-          ts,
-          '',
-          'OCR_ERROR'
-        );
-      }
     }
   } catch (err) {
     console.error(err);
+    els.ocrMiniText.textContent = 'ERROR';
     setStatus('ERROR');
-
-    if (
-      save &&
-      (
-        schemaLocked
-          ? lockedFormat
-          : els.outputFormat.value
-      ) === 'log'
-    ) {
-      addMeasurement(
-        nowIsoLocal(),
-        '',
-        'ERROR'
-      );
-    }
   } finally {
     isReading = false;
-    els.singleBtn.disabled = !stream;
+    els.singleBtn.disabled = !stream || tableComplete;
     els.ocrProgress.value = 0;
   }
 }
@@ -1665,60 +1265,45 @@ async function startLogging() {
     return;
   }
 
-  ensureSchema();
+  lockSchema();
 
   loggingActive = true;
   els.startBtn.disabled = true;
   els.stopBtn.disabled = false;
 
-  lockMeasurementControls(true);
-  els.settingsDetails.open = false;
+  unlockAdvancedControls(true);
+  els.outputSettings.open = false;
+  els.advancedSettings.open = false;
 
-  if (
-    els.recordMode.value ===
-    'change'
-  ) {
-    changeBaseline =
-      captureFingerprint();
-
+  if (els.recordMode.value === 'change') {
+    changeBaseline = captureFingerprint();
     changeCandidate = null;
     changeCandidateCount = 0;
 
-    setStatus(
-      '表示変化を監視中'
-    );
+    setStatus('表示変化を監視中');
 
-    await readOnce({
-      save: true
-    });
+    await readOnce({ save: true });
 
     timer = setInterval(
       checkDisplayChange,
-      160
+      120
     );
   } else {
     const sec =
-      Number(
-        els.intervalSec.value
-      );
+      Number(els.intervalSec.value);
 
     setStatus('連続記録中');
 
-    await readOnce({
-      save: true
-    });
+    await readOnce({ save: true });
 
     timer = setInterval(
-      () =>
-        readOnce({
-          save: true
-        }),
+      () => readOnce({ save: true }),
       sec * 1000
     );
   }
 }
 
-function stopLogging() {
+function stopLogging(preserveStatus = false) {
   if (timer) {
     clearInterval(timer);
   }
@@ -1729,265 +1314,353 @@ function stopLogging() {
   changeCandidate = null;
   changeCandidateCount = 0;
 
-  els.startBtn.disabled =
-    !stream || tableComplete;
-
+  els.startBtn.disabled = !stream || tableComplete;
   els.stopBtn.disabled = true;
 
-  lockMeasurementControls(false);
+  unlockAdvancedControls(false);
 
-  if (schemaLocked) {
-    els.outputFormat.disabled = true;
-    els.tableHeaders.disabled = true;
-    els.rowHeaderName.disabled = true;
-    els.measureHeaders.disabled = true;
-    els.rowLabels.disabled = true;
-  }
-
-  updateSettingsUi();
-
-  if (!tableComplete) {
+  if (!preserveStatus) {
     setStatus('停止');
   }
 }
 
-function hasOutputData() {
-  if (!schemaLocked) return false;
-
-  if (lockedFormat === 'log') {
-    return logRows.length > 0;
-  }
-
-  return tableRows.some(
-    row =>
-      row.some(
-        (cell, index) =>
-          String(cell ?? '') !== '' &&
-          !(
-            lockedFormat === 'labeled' &&
-            index === 0
-          )
-      )
-  );
-}
-
-function updateCsvState() {
-  els.csvBtn.disabled =
-    !hasOutputData();
-}
-
 function csvEscape(value) {
-  const s =
-    String(value ?? '');
+  const s = String(value ?? '');
 
   return /[",\r\n]/.test(s)
     ? `"${s.replace(/"/g, '""')}"`
     : s;
 }
 
-function downloadCsv() {
-  if (!schemaLocked) return;
+function getExportSize() {
+  const cfg = config;
 
-  const lines = [];
-
-  if (lockedFormat === 'log') {
-    lines.push(
-      'timestamp,value,unit,status,note'
-    );
-
-    for (const row of logRows) {
-      if (row.kind === 'blank') {
-        lines.push('');
-        continue;
-      }
-
-      lines.push(
-        [
-          row.timestamp,
-          row.value,
-          row.unit,
-          row.status,
-          row.note
-        ]
-          .map(csvEscape)
-          .join(',')
-      );
-    }
-  } else {
-    lines.push(
-      tableColumns
-        .map(csvEscape)
-        .join(',')
-    );
-
-    for (const row of tableRows) {
-      lines.push(
-        tableColumns
-          .map(
-            (_, index) =>
-              csvEscape(
-                row[index] ?? ''
-              )
-          )
-          .join(',')
-      );
-    }
+  if (cfg.mode !== 'table') {
+    return { rows: 0, cols: 0 };
   }
 
-  // UIでは「\n = 次の行」と表現。Excel互換性のため実ファイルはCRLFで出力。
-  const csv =
-    '\uFEFF' +
-    lines.join('\r\n');
+  const customColCount =
+    cfg.columnHeaderMode === 'custom'
+      ? cfg.columnHeaders.length
+      : 0;
 
-  const blob =
-    new Blob(
-      [csv],
-      {
-        type:
-          'text/csv;charset=utf-8'
-      }
-    );
+  const customRowCount =
+    cfg.rowHeaderMode === 'custom'
+      ? cfg.rowHeaders.length
+      : 0;
 
-  const url =
-    URL.createObjectURL(blob);
-
-  const a =
-    document.createElement('a');
-
-  const d = new Date();
-  const pad =
-    n =>
-      String(n).padStart(
-        2,
-        '0'
+  const cols = cfg.fixedColumns
+    ? cfg.columnCount
+    : Math.max(
+        usedMaxCol + 1,
+        cursorCol + 1,
+        customColCount,
+        1
       );
 
-  a.download =
+  const rows = cfg.fixedRows
+    ? cfg.rowCount
+    : Math.max(
+        usedMaxRow + 1,
+        cursorRow + 1,
+        customRowCount,
+        1
+      );
+
+  return { rows, cols };
+}
+
+function buildCsvText() {
+  if (!schemaLocked) {
+    config = readConfigFromUi();
+  }
+
+  const cfg = schemaLocked ? config : readConfigFromUi();
+
+  if (cfg.mode === 'simple') {
+    return '\uFEFF' + simpleValues.map(csvEscape).join(',');
+  }
+
+  const { rows, cols } = getExportSize();
+  const lines = [];
+
+  if (cfg.columnHeaderMode !== 'none') {
+    const header = [];
+
+    if (cfg.rowHeaderMode !== 'none') {
+      header.push(cfg.cornerHeader || '');
+    }
+
+    for (let c = 0; c < cols; c++) {
+      header.push(getColumnLabel(c, cfg));
+    }
+
+    lines.push(header.map(csvEscape).join(','));
+  }
+
+  for (let r = 0; r < rows; r++) {
+    const row = [];
+
+    if (cfg.rowHeaderMode !== 'none') {
+      row.push(getRowLabel(r, cfg));
+    }
+
+    for (let c = 0; c < cols; c++) {
+      row.push(getTableCell(r, c));
+    }
+
+    lines.push(row.map(csvEscape).join(','));
+  }
+
+  return '\uFEFF' + lines.join('\r\n');
+}
+
+function makeCsvFile() {
+  const csv = buildCsvText();
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+
+  const filename =
     `swt-log-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.csv`;
 
+  const blob = new Blob(
+    [csv],
+    { type: 'text/csv;charset=utf-8' }
+  );
+
+  return { csv, blob, filename };
+}
+
+function downloadCsv() {
+  if (history.length === 0) return;
+
+  const { blob, filename } = makeCsvFile();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+
+  a.download = filename;
   a.href = url;
+
   document.body.appendChild(a);
   a.click();
   a.remove();
 
   setTimeout(
-    () =>
-      URL.revokeObjectURL(url),
+    () => URL.revokeObjectURL(url),
     1000
   );
+
+  setStatus('CSVを保存しました');
 }
 
-els.outputFormat.addEventListener(
-  'change',
-  updateSettingsUi
-);
+async function shareCsv() {
+  if (history.length === 0) return;
 
-els.recordMode.addEventListener(
-  'change',
-  updateSettingsUi
-);
+  const { blob, filename } = makeCsvFile();
 
-[
-  els.tableHeaders,
-  els.rowHeaderName,
-  els.measureHeaders,
-  els.rowLabels
-].forEach(input => {
-  input.addEventListener(
-    'input',
-    updateTargetLine
-  );
+  try {
+    const file = new File(
+      [blob],
+      filename,
+      { type: 'text/csv;charset=utf-8' }
+    );
+
+    if (
+      navigator.share &&
+      (!navigator.canShare ||
+       navigator.canShare({ files: [file] }))
+    ) {
+      await navigator.share({
+        files: [file],
+        title: 'SWT測定データ',
+        text: 'SWT Loggerで作成したCSVです。'
+      });
+
+      setStatus('共有しました');
+      return;
+    }
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      setStatus('共有をキャンセル');
+      return;
+    }
+
+    console.error('share failed', err);
+  }
+
+  downloadCsv();
+}
+
+function renderPreview() {
+  els.previewTable.textContent = '';
+
+  const cfg = getActiveConfig();
+
+  if (cfg.mode === 'simple') {
+    const tbody = document.createElement('tbody');
+    const tr = document.createElement('tr');
+
+    const count = Math.max(simpleValues.length + 1, 1);
+
+    for (let i = 0; i < count; i++) {
+      const td = document.createElement('td');
+      td.textContent = simpleValues[i] ?? '';
+
+      if (
+        schemaLocked &&
+        i === simpleValues.length
+      ) {
+        td.classList.add('active-cell');
+      }
+
+      tr.append(td);
+    }
+
+    tbody.append(tr);
+    els.previewTable.append(tbody);
+    return;
+  }
+
+  const previewCfg = schemaLocked ? config : readConfigFromUi();
+
+  let rows;
+  let cols;
+
+  if (schemaLocked) {
+    ({ rows, cols } = getExportSize());
+  } else {
+    cols = previewCfg.fixedColumns
+      ? previewCfg.columnCount
+      : Math.max(
+          previewCfg.columnHeaderMode === 'custom'
+            ? previewCfg.columnHeaders.length
+            : 3,
+          1
+        );
+
+    rows = previewCfg.fixedRows
+      ? previewCfg.rowCount
+      : Math.max(
+          previewCfg.rowHeaderMode === 'custom'
+            ? previewCfg.rowHeaders.length
+            : 3,
+          1
+        );
+  }
+
+  if (previewCfg.columnHeaderMode !== 'none') {
+    const thead = document.createElement('thead');
+    const tr = document.createElement('tr');
+
+    if (previewCfg.rowHeaderMode !== 'none') {
+      const th = document.createElement('th');
+      th.textContent = previewCfg.cornerHeader || '';
+      tr.append(th);
+    }
+
+    for (let c = 0; c < cols; c++) {
+      const th = document.createElement('th');
+      th.textContent = getColumnLabel(c, previewCfg);
+      tr.append(th);
+    }
+
+    thead.append(tr);
+    els.previewTable.append(thead);
+  }
+
+  const tbody = document.createElement('tbody');
+
+  for (let r = 0; r < rows; r++) {
+    const tr = document.createElement('tr');
+
+    if (previewCfg.rowHeaderMode !== 'none') {
+      const td = document.createElement('td');
+      td.textContent = getRowLabel(r, previewCfg);
+      td.classList.add('row-header');
+      tr.append(td);
+    }
+
+    for (let c = 0; c < cols; c++) {
+      const td = document.createElement('td');
+      td.textContent = schemaLocked ? getTableCell(r, c) : '';
+
+      if (
+        schemaLocked &&
+        !tableComplete &&
+        r === cursorRow &&
+        c === cursorCol
+      ) {
+        td.classList.add('active-cell');
+      }
+
+      tr.append(td);
+    }
+
+    tbody.append(tr);
+  }
+
+  els.previewTable.append(tbody);
+}
+
+const outputUiControls = [
+  els.outputMode,
+  els.fixedColumns,
+  els.columnCount,
+  els.columnHeaderMode,
+  els.columnHeaders,
+  els.fixedRows,
+  els.rowCount,
+  els.rowHeaderMode,
+  els.rowHeaders,
+  els.cornerHeader,
+];
+
+outputUiControls.forEach(control => {
+  control.addEventListener('input', updateOutputSettingsUi);
+  control.addEventListener('change', updateOutputSettingsUi);
 });
+
+els.recordMode.addEventListener('change', updateAdvancedUi);
 
 [
   els.roiW,
   els.roiH,
   els.roiY
-].forEach(input => {
-  input.addEventListener(
-    'input',
-    updateRoi
-  );
+].forEach(control => {
+  control.addEventListener('input', updateRoi);
 });
 
-els.unit.addEventListener(
-  'change',
-  () => {
-    els.currentUnit.textContent =
-      els.unit.value;
+els.unit.addEventListener('change', () => {
+  els.currentUnit.textContent = els.unit.value;
+});
+
+els.startCameraBtn.addEventListener('click', startCamera);
+els.flipBtn.addEventListener('click', startCamera);
+els.singleBtn.addEventListener('click', () => readOnce({ save: true }));
+els.startBtn.addEventListener('click', startLogging);
+els.stopBtn.addEventListener('click', () => stopLogging(false));
+els.undoBtn.addEventListener('click', undoLast);
+els.shareBtn.addEventListener('click', shareCsv);
+els.saveBtn.addEventListener('click', downloadCsv);
+
+window.addEventListener('beforeunload', () => {
+  if (timer) {
+    clearInterval(timer);
   }
-);
 
-els.startCameraBtn.addEventListener(
-  'click',
-  startCamera
-);
-
-els.flipBtn.addEventListener(
-  'click',
-  startCamera
-);
-
-els.singleBtn.addEventListener(
-  'click',
-  () =>
-    readOnce({
-      save: true
-    })
-);
-
-els.startBtn.addEventListener(
-  'click',
-  startLogging
-);
-
-els.stopBtn.addEventListener(
-  'click',
-  stopLogging
-);
-
-els.insertTextBtn.addEventListener(
-  'click',
-  insertTextEntry
-);
-
-els.nextCellBtn.addEventListener(
-  'click',
-  moveNextCell
-);
-
-els.newRowBtn.addEventListener(
-  'click',
-  moveNextRow
-);
-
-els.csvBtn.addEventListener(
-  'click',
-  downloadCsv
-);
-
-window.addEventListener(
-  'beforeunload',
-  () => {
-    if (timer) {
-      clearInterval(timer);
-    }
-
-    if (stream) {
-      stream
-        .getTracks()
-        .forEach(
-          track =>
-            track.stop()
-        );
-    }
-
-    if (worker) {
-      worker.terminate();
-    }
+  if (stream) {
+    stream
+      .getTracks()
+      .forEach(track => track.stop());
   }
-);
+
+  if (worker) {
+    worker.terminate();
+  }
+});
 
 updateRoi();
-updateSettingsUi();
+updateOutputSettingsUi();
+updateAdvancedUi();
+updateAfterDataChange();
 renderPreview();
