@@ -12,62 +12,143 @@
   <main class="app">
     <header class="app-header">
       <h1>SWT Logger</h1>
-      <span>v0.5</span>
+      <span>v0.6</span>
     </header>
 
-    <details class="settings-card" id="settingsDetails" open>
-      <summary>初期設定・読み取り設定</summary>
-      <div class="settings-body">
-        <div class="field-grid">
-          <label>
-            出力形式
-            <select id="outputFormat">
-              <option value="log">ログ表</option>
-              <option value="table">自由表</option>
-              <option value="labeled" selected>行ラベル付き測定表</option>
-            </select>
-          </label>
+    <details class="setup-card" id="outputSettings" open>
+      <summary>出力設定</summary>
+      <div class="details-body">
+        <label class="block-label">
+          形式
+          <select id="outputMode">
+            <option value="simple" selected>シンプルCSV（1行）</option>
+            <option value="table">表形式</option>
+          </select>
+        </label>
 
-          <label id="tableHeadersField" class="wide hidden-field">
-            自由表の列名
-            <input id="tableHeaders" type="text" value="測定1,測定2,測定3" placeholder="例：左,中央,右" />
-            <small>カンマ区切り</small>
-          </label>
-
-          <div id="labeledFields" class="wide schema-box">
-            <label>
-              左端ヘッダー
-              <input id="rowHeaderName" type="text" value="場所" placeholder="例：場所" />
+        <div id="tableSettings" class="hidden-field">
+          <div class="dimension-card">
+            <div class="dimension-head">
+              <strong>列</strong>
+              <label class="toggle-label"><input id="fixedColumns" type="checkbox" checked /> 列数を指定</label>
+            </div>
+            <label id="columnCountField">
+              列数
+              <input id="columnCount" type="number" inputmode="numeric" min="1" max="200" value="3" />
             </label>
             <label>
-              測定ヘッダー
-              <input id="measureHeaders" type="text" value="1回目,2回目,3回目" placeholder="例：1回目,2回目,3回目" />
+              列ヘッダー
+              <select id="columnHeaderMode">
+                <option value="none">なし</option>
+                <option value="auto" selected>自動採番</option>
+                <option value="custom">任意入力</option>
+              </select>
+            </label>
+            <label id="columnHeadersField" class="hidden-field">
+              列ヘッダー名
+              <input id="columnHeaders" type="text" value="1回目,2回目,3回目" placeholder="例：1回目,2回目,3回目" />
               <small>カンマ区切り</small>
-            </label>
-            <label class="wide">
-              行ラベル
-              <textarea id="rowLabels" rows="3" placeholder="A&#10;B&#10;C">A
-B
-C</textarea>
-              <small>1行に1つ。カンマ区切りでも可</small>
             </label>
           </div>
 
+          <div class="dimension-card">
+            <div class="dimension-head">
+              <strong>行</strong>
+              <label class="toggle-label"><input id="fixedRows" type="checkbox" checked /> 行数を指定</label>
+            </div>
+            <label id="rowCountField">
+              行数
+              <input id="rowCount" type="number" inputmode="numeric" min="1" max="1000" value="3" />
+            </label>
+            <label>
+              行ヘッダー
+              <select id="rowHeaderMode">
+                <option value="none">なし</option>
+                <option value="auto">自動採番</option>
+                <option value="custom" selected>任意入力</option>
+              </select>
+            </label>
+            <label id="rowHeadersField">
+              行ヘッダー名
+              <textarea id="rowHeaders" rows="3" placeholder="1行に1つ">A
+B
+C</textarea>
+              <small>改行またはカンマ区切り</small>
+            </label>
+          </div>
+
+          <label id="cornerHeaderField" class="block-label">
+            左上見出し
+            <input id="cornerHeader" type="text" value="場所" placeholder="例：場所" />
+          </label>
+
+          <p class="setup-hint" id="fillRuleHint"></p>
+        </div>
+      </div>
+    </details>
+
+    <section class="work-card">
+      <div class="camera-wrap" id="cameraWrap">
+        <video id="video" playsinline muted></video>
+        <div class="roi" id="roi" aria-label="OCR読み取り範囲"></div>
+
+        <div class="ocr-mini" aria-label="OCRプレビュー">
+          <div class="ocr-mini-title">OCR</div>
+          <canvas id="debugCanvas"></canvas>
+          <strong id="ocrMiniText">--</strong>
+        </div>
+      </div>
+
+      <div class="camera-actions">
+        <button id="startCameraBtn" class="primary">カメラ開始</button>
+        <button id="flipBtn" disabled>背面カメラ再選択</button>
+      </div>
+
+      <div class="reading-panel">
+        <div class="current-reading">
+          <span>現在値</span>
+          <strong id="currentValue">--.-</strong>
+          <b id="currentUnit">µm</b>
+        </div>
+        <div class="destination">
+          <span>保存先</span>
+          <strong id="targetLine">CSV 1番目</strong>
+        </div>
+      </div>
+
+      <div class="status-strip">
+        <span id="status">待機中</span>
+        <span>信頼度 <b id="confidence">--</b></span>
+        <span>保存 <b id="recordCount">0</b></span>
+      </div>
+
+      <div class="measure-actions">
+        <button id="singleBtn" disabled>1回読む</button>
+        <button id="startBtn" class="primary" disabled>監視開始</button>
+        <button id="stopBtn" class="danger" disabled>停止</button>
+        <button id="undoBtn" disabled>1つ戻す</button>
+      </div>
+
+      <div class="export-actions">
+        <button id="shareBtn" class="primary" disabled>共有</button>
+        <button id="saveBtn" disabled>ファイル保存</button>
+      </div>
+
+      <div class="last-line">
+        <span>最終記録 <b id="lastTime">--:--:--</b></span>
+        <span id="undoHint"></span>
+      </div>
+    </section>
+
+    <details class="advanced-card" id="advancedSettings">
+      <summary>高度な設定</summary>
+      <div class="details-body">
+        <div class="advanced-grid">
           <label>
             記録方法
             <select id="recordMode">
               <option value="change" selected>表示が変わったら記録</option>
               <option value="interval">一定間隔で記録</option>
-            </select>
-          </label>
-
-          <label>
-            小数桁
-            <select id="decimalPlaces">
-              <option value="1" selected>1桁固定</option>
-              <option value="auto">自動</option>
-              <option value="0">整数</option>
-              <option value="2">2桁固定</option>
             </select>
           </label>
 
@@ -92,6 +173,16 @@ C</textarea>
           </label>
 
           <label>
+            小数桁
+            <select id="decimalPlaces">
+              <option value="1" selected>1桁固定</option>
+              <option value="auto">自動</option>
+              <option value="0">整数</option>
+              <option value="2">2桁固定</option>
+            </select>
+          </label>
+
+          <label>
             単位
             <select id="unit">
               <option value="µm" selected>µm</option>
@@ -101,83 +192,23 @@ C</textarea>
         </div>
 
         <div class="roi-grid">
-          <label>枠 幅 <span id="roiWLabel">62%</span><input id="roiW" type="range" min="30" max="90" value="62" /></label>
-          <label>枠 高さ <span id="roiHLabel">24%</span><input id="roiH" type="range" min="12" max="50" value="24" /></label>
-          <label>枠 縦位置 <span id="roiYLabel">56%</span><input id="roiY" type="range" min="30" max="75" value="56" /></label>
+          <label>読取枠 幅 <span id="roiWLabel">62%</span><input id="roiW" type="range" min="30" max="90" value="62" /></label>
+          <label>読取枠 高さ <span id="roiHLabel">24%</span><input id="roiH" type="range" min="12" max="50" value="24" /></label>
+          <label>読取枠 縦位置 <span id="roiYLabel">56%</span><input id="roiY" type="range" min="30" max="75" value="56" /></label>
+        </div>
+
+        <div class="diagnostics">
+          <progress id="ocrProgress" max="1" value="0"></progress>
+          <p id="ocrText">OCR未実行</p>
         </div>
       </div>
     </details>
 
-    <section class="work-card">
-      <div class="camera-wrap" id="cameraWrap">
-        <video id="video" playsinline muted></video>
-        <div class="roi" id="roi" aria-label="OCR読み取り範囲"></div>
-      </div>
-
-      <div class="camera-line">
-        <button id="startCameraBtn" class="primary">カメラ開始</button>
-        <button id="flipBtn" disabled>背面カメラ再選択</button>
-      </div>
-
-      <div class="reading-line">
-        <span class="reading-label">現在値</span>
-        <strong id="currentValue">--.-</strong>
-        <span id="currentUnit">µm</span>
-      </div>
-
-      <div class="status-line">
-        <span id="status">待機中</span>
-        <span>信頼度 <b id="confidence">--</b></span>
-        <span>測定 <b id="recordCount">0</b></span>
-      </div>
-
-      <div class="measure-actions">
-        <button id="singleBtn" disabled>1回読む</button>
-        <button id="startBtn" class="primary" disabled>監視開始</button>
-        <button id="stopBtn" class="danger" disabled>停止</button>
-      </div>
-
-      <div class="target-panel">
-        <div>
-          <span>現在の入力先</span>
-          <strong id="targetLine">場所 A / 1回目</strong>
-        </div>
-        <div class="op-state">
-          <span>直前の操作</span>
-          <strong id="lastOperation">未操作</strong>
-        </div>
-      </div>
-
-      <div class="insert-box">
-        <textarea id="noteText" rows="2" placeholder="現在セルへ入れる文字列"></textarea>
-        <div class="insert-actions">
-          <button id="insertTextBtn">文字を現在セルへ</button>
-          <button id="nextCellBtn" class="token-btn"><code>,</code> 次セル</button>
-          <button id="newRowBtn" class="token-btn"><code>\n</code> 次行</button>
-          <button id="csvBtn" disabled>CSV保存</button>
-        </div>
-      </div>
-
-      <div class="csv-legend">
-        <span><code>,</code> = 次の列</span>
-        <span><code>\n</code> = 次の行</span>
-      </div>
-
-      <div class="last-line">最終記録 <b id="lastTime">--:--:--</b></div>
-    </section>
-
-    <details class="preview-card" id="previewDetails" open>
+    <details class="preview-card" id="previewDetails">
       <summary>出力プレビュー</summary>
       <div class="table-wrap">
         <table id="previewTable"></table>
       </div>
-    </details>
-
-    <details class="debug-card">
-      <summary>OCR診断</summary>
-      <progress id="ocrProgress" max="1" value="0"></progress>
-      <p id="ocrText" class="ocr-text"></p>
-      <canvas id="debugCanvas"></canvas>
     </details>
 
     <canvas id="captureCanvas" hidden></canvas>
