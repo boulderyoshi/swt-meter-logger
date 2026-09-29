@@ -1963,7 +1963,11 @@ function stopAutoReading(
   setSettingsLocked(false);
 
   if (!preserveStatus) {
-    setStatus('自動読み取り停止');
+    setStatus(
+      isQrMode()
+        ? 'QR連続読取停止'
+        : '自動読み取り停止'
+    );
   }
 
   updatePrimaryButtons();
@@ -1971,6 +1975,15 @@ function stopAutoReading(
 }
 
 async function handleReadButton() {
+  if (isQrMode()) {
+    if (loggingActive) {
+      stopAutoReading(false);
+    } else {
+      await startQrReading();
+    }
+    return;
+  }
+
   if (els.readMode.value === 'manual') {
     await readOnce({ save: true });
     return;
@@ -1993,6 +2006,23 @@ function csvEscape(value) {
 }
 
 function buildCsvText() {
+  if (isQrMode()) {
+    const lines = ['読取日時,管理番号'];
+
+    for (const record of qrRecords) {
+      lines.push(
+        [
+          record.timestamp,
+          record.value
+        ]
+          .map(csvEscape)
+          .join(',')
+      );
+    }
+
+    return '\uFEFF' + lines.join('\r\n');
+  }
+
   const cfg = readConfig();
 
   if (cfg.mode === 'simple') {
@@ -2098,7 +2128,7 @@ function makeCsvFile() {
       );
 
   const filename =
-    `swt-log-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.csv`;
+    `${isQrMode() ? 'qr-management' : 'swt-log'}-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.csv`;
 
   const blob =
     new Blob(
@@ -2117,7 +2147,11 @@ function makeCsvFile() {
 }
 
 function downloadCsv() {
-  if (!measurements.length) return;
+  const count = isQrMode()
+    ? qrRecords.length
+    : measurements.length;
+
+  if (!count) return;
 
   const {
     blob,
@@ -2149,7 +2183,11 @@ function downloadCsv() {
 }
 
 async function shareCsv() {
-  if (!measurements.length) return;
+  const count = isQrMode()
+    ? qrRecords.length
+    : measurements.length;
+
+  if (!count) return;
 
   const {
     blob,
@@ -2178,9 +2216,12 @@ async function shareCsv() {
     ) {
       await navigator.share({
         files: [file],
-        title: 'SWT測定データ',
-        text:
-          'SWT Loggerで作成したCSVです。'
+        title: isQrMode()
+          ? 'QR管理番号一覧'
+          : 'SWT測定データ',
+        text: isQrMode()
+          ? 'QR管理番号の読取一覧CSVです。'
+          : 'SWT Loggerで作成したCSVです。'
       });
 
       setStatus('共有しました');
