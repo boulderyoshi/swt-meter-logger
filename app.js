@@ -1014,13 +1014,113 @@ async function ensureQrEngine() {
     qrEnginePromise = window.QrScanner
       .createQrEngine('./vendor/qr-scanner-worker.min.js')
       .catch(err => {
-        console.warn('QR worker unavailable, using jsQR fallback', err);
+        console.warn('QR worker unavailable, using fallback decoders', err);
         qrEnginePromise = null;
         return null;
       });
   }
 
   return qrEnginePromise;
+}
+
+async function ensureZxingFallback() {
+  const api = window.ZXingWASM;
+
+  if (!api?.readBarcodes) {
+    return null;
+  }
+
+  if (!zxingReadyPromise) {
+    try {
+      const prep = api.prepareZXingModule?.({
+        overrides: {
+          locateFile(path, prefix) {
+            if (path.endsWith('.wasm')) {
+              return 'https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.4/dist/reader/zxing_reader.wasm';
+            }
+
+            return prefix + path;
+          },
+        },
+        fireImmediately: true,
+      });
+
+      zxingReadyPromise = Promise
+        .resolve(prep)
+        .then(() => api)
+        .catch(err => {
+          console.warn('ZXing WASM unavailable', err);
+          zxingReadyPromise = null;
+          return null;
+        });
+    } catch (err) {
+      console.warn('ZXing WASM init failed', err);
+      return null;
+    }
+  }
+
+  return zxingReadyPromise;
+}
+
+function initSuccessAudio() {
+  try {
+    if (!successAudioContext) {
+      const AudioContextClass =
+        window.AudioContext ||
+        window.webkitAudioContext;
+
+      if (!AudioContextClass) {
+        return;
+      }
+
+      successAudioContext =
+        new AudioContextClass();
+    }
+
+    if (successAudioContext.state === 'suspended') {
+      void successAudioContext.resume();
+    }
+  } catch (err) {
+    console.debug('success audio unavailable', err);
+  }
+}
+
+function playSuccessCue() {
+  try {
+    initSuccessAudio();
+
+    const ctx = successAudioContext;
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(190, now);
+    osc.frequency.exponentialRampToValueAtTime(
+      105,
+      now + 0.085
+    );
+
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(
+      0.12,
+      now + 0.006
+    );
+    gain.gain.exponentialRampToValueAtTime(
+      0.0001,
+      now + 0.09
+    );
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.095);
+  } catch (err) {
+    console.debug('success sound failed', err);
+  }
 }
 
 function getQrSourceRect(fraction = 0.78) {
@@ -1052,19 +1152,46 @@ function getQrSourceRect(fraction = 0.78) {
   const height = visibleH * fraction;
 
   return {
-    x: Math.max(0, Math.round(visibleX + (visibleW - width) / 2)),
-    y: Math.max(0, Math.round(visibleY + (visibleH - height) / 2)),
-    width: Math.max(1, Math.round(width)),
-    height: Math.max(1, Math.round(height)),
+    x: Math.max(
+      0,
+      Math.round(
+        visibleX +
+        (visibleW - width) / 2
+      )
+    ),
+    y: Math.max(
+      0,
+      Math.round(
+        visibleY +
+        (visibleH - height) / 2
+      )
+    ),
+    width: Math.max(
+      1,
+      Math.round(width)
+    ),
+    height: Math.max(
+      1,
+      Math.round(height)
+    ),
   };
 }
 
 function getQrScanRegion(detail = false) {
-  const rect = getQrSourceRect(detail ? 0.90 : 0.80);
-  const targetLongSide = detail ? 1600 : 960;
+  const rect = getQrSourceRect(
+    detail ? 0.90 : 0.80
+  );
+
+  const targetLongSide =
+    detail ? 1600 : 960;
+
   const scale = Math.min(
     1,
-    targetLongSide / Math.max(rect.width, rect.height)
+    targetLongSide /
+      Math.max(
+        rect.width,
+        rect.height
+      )
   );
 
   return {
@@ -1072,35 +1199,135 @@ function getQrScanRegion(detail = false) {
     y: rect.y,
     width: rect.width,
     height: rect.height,
-    downScaledWidth: Math.max(1, Math.round(rect.width * scale)),
-    downScaledHeight: Math.max(1, Math.round(rect.height * scale)),
+    downScaledWidth: Math.max(
+      1,
+      Math.round(
+        rect.width * scale
+      )
+    ),
+    downScaledHeight: Math.max(
+      1,
+      Math.round(
+        rect.height * scale
+      )
+    ),
   };
 }
 
-function scanQrWithJsQrFallback(enhanced = false) {
-  if (!window.jsQR) return null;
+function scoreQrSharpness(canvas) {
+  const ctx =
+    qrSharpnessCanvas.getContext(
+      '2d',
+      { willReadFrequently: true }
+    );
 
-  const rect = getQrSourceRect(0.92);
-  const targetLongSide = 1500;
-  const scale = Math.min(
-    1,
-    targetLongSide / Math.max(rect.width, rect.height)
+  ctx.drawImage(
+    canvas,
+    0,
+    0,
+    qrSharpnessCanvas.width,
+    qrSharpnessCanvas.height
   );
 
-  const targetW = Math.max(1, Math.round(rect.width * scale));
-  const targetH = Math.max(1, Math.round(rect.height * scale));
+  const data = ctx.getImageData(
+    0,
+    0,
+    qrSharpnessCanvas.width,
+    qrSharpnessCanvas.height
+  ).data;
 
-  qrFallbackCanvas.width = targetW;
-  qrFallbackCanvas.height = targetH;
+  const width = qrSharpnessCanvas.width;
+  const height = qrSharpnessCanvas.height;
+  const gray = new Uint8Array(width * height);
 
-  const ctx = qrFallbackCanvas.getContext(
+  for (
+    let p = 0, i = 0;
+    p < gray.length;
+    p++, i += 4
+  ) {
+    gray[p] = Math.round(
+      data[i] * 0.299 +
+      data[i + 1] * 0.587 +
+      data[i + 2] * 0.114
+    );
+  }
+
+  let score = 0;
+  let count = 0;
+
+  for (
+    let y = 1;
+    y < height - 1;
+    y += 2
+  ) {
+    const row = y * width;
+
+    for (
+      let x = 1;
+      x < width - 1;
+      x += 2
+    ) {
+      const p = row + x;
+      const gx =
+        gray[p + 1] -
+        gray[p - 1];
+      const gy =
+        gray[p + width] -
+        gray[p - width];
+
+      score +=
+        gx * gx +
+        gy * gy;
+
+      count += 1;
+    }
+  }
+
+  return count
+    ? score / count
+    : 0;
+}
+
+function rememberQrCandidate() {
+  const rect =
+    getQrSourceRect(0.90);
+
+  const targetLongSide = 1100;
+  const scale = Math.min(
+    1,
+    targetLongSide /
+      Math.max(
+        rect.width,
+        rect.height
+      )
+  );
+
+  const width = Math.max(
+    1,
+    Math.round(
+      rect.width * scale
+    )
+  );
+
+  const height = Math.max(
+    1,
+    Math.round(
+      rect.height * scale
+    )
+  );
+
+  const canvas =
+    qrFrameCanvases[
+      qrFrameCursor
+    ];
+
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext(
     '2d',
     { willReadFrequently: true }
   );
-
-  ctx.filter = enhanced
-    ? 'grayscale(100%) contrast(185%)'
-    : 'none';
 
   ctx.drawImage(
     els.video,
@@ -1110,27 +1337,446 @@ function scanQrWithJsQrFallback(enhanced = false) {
     rect.height,
     0,
     0,
-    targetW,
-    targetH
+    width,
+    height
   );
 
-  ctx.filter = 'none';
+  qrFrameScores[
+    qrFrameCursor
+  ] = scoreQrSharpness(canvas);
 
-  const imageData = ctx.getImageData(
-    0,
-    0,
-    targetW,
-    targetH
+  qrFrameCursor =
+    (qrFrameCursor + 1) %
+    qrFrameCanvases.length;
+
+  qrFrameCount = Math.min(
+    qrFrameCount + 1,
+    qrFrameCanvases.length
   );
+}
+
+function getBestQrCandidate() {
+  if (!qrFrameCount) {
+    return null;
+  }
+
+  let bestIndex = 0;
+  let bestScore = -Infinity;
+
+  for (
+    let i = 0;
+    i < qrFrameCount;
+    i++
+  ) {
+    if (
+      qrFrameScores[i] >
+      bestScore
+    ) {
+      bestScore =
+        qrFrameScores[i];
+      bestIndex = i;
+    }
+  }
+
+  return qrFrameCanvases[
+    bestIndex
+  ];
+}
+
+function buildLocalContrastQrCanvas(
+  sourceCanvas
+) {
+  const maxLongSide = 1150;
+  const scale = Math.min(
+    1,
+    maxLongSide /
+      Math.max(
+        sourceCanvas.width,
+        sourceCanvas.height
+      )
+  );
+
+  const width = Math.max(
+    1,
+    Math.round(
+      sourceCanvas.width * scale
+    )
+  );
+
+  const height = Math.max(
+    1,
+    Math.round(
+      sourceCanvas.height * scale
+    )
+  );
+
+  qrEnhancedCanvas.width = width;
+  qrEnhancedCanvas.height = height;
+
+  const ctx =
+    qrEnhancedCanvas.getContext(
+      '2d',
+      { willReadFrequently: true }
+    );
+
+  ctx.drawImage(
+    sourceCanvas,
+    0,
+    0,
+    width,
+    height
+  );
+
+  const image = ctx.getImageData(
+    0,
+    0,
+    width,
+    height
+  );
+
+  const gray =
+    new Uint8Array(
+      width * height
+    );
+
+  for (
+    let p = 0, i = 0;
+    p < gray.length;
+    p++, i += 4
+  ) {
+    gray[p] = Math.round(
+      image.data[i] * 0.299 +
+      image.data[i + 1] * 0.587 +
+      image.data[i + 2] * 0.114
+    );
+  }
+
+  const integralWidth =
+    width + 1;
+
+  const integral =
+    new Uint32Array(
+      (width + 1) *
+      (height + 1)
+    );
+
+  for (
+    let y = 1;
+    y <= height;
+    y++
+  ) {
+    let rowSum = 0;
+
+    for (
+      let x = 1;
+      x <= width;
+      x++
+    ) {
+      rowSum +=
+        gray[
+          (y - 1) *
+          width +
+          (x - 1)
+        ];
+
+      integral[
+        y *
+        integralWidth +
+        x
+      ] =
+        integral[
+          (y - 1) *
+          integralWidth +
+          x
+        ] +
+        rowSum;
+    }
+  }
+
+  const radius = Math.max(
+    18,
+    Math.round(
+      Math.min(
+        width,
+        height
+      ) * 0.045
+    )
+  );
+
+  const gain = 3.2;
+
+  for (
+    let y = 0;
+    y < height;
+    y++
+  ) {
+    const y0 = Math.max(
+      0,
+      y - radius
+    );
+
+    const y1 = Math.min(
+      height - 1,
+      y + radius
+    );
+
+    for (
+      let x = 0;
+      x < width;
+      x++
+    ) {
+      const x0 = Math.max(
+        0,
+        x - radius
+      );
+
+      const x1 = Math.min(
+        width - 1,
+        x + radius
+      );
+
+      const A =
+        integral[
+          y0 *
+          integralWidth +
+          x0
+        ];
+
+      const B =
+        integral[
+          y0 *
+          integralWidth +
+          x1 + 1
+        ];
+
+      const C =
+        integral[
+          (y1 + 1) *
+          integralWidth +
+          x0
+        ];
+
+      const D =
+        integral[
+          (y1 + 1) *
+          integralWidth +
+          x1 + 1
+        ];
+
+      const area =
+        (x1 - x0 + 1) *
+        (y1 - y0 + 1);
+
+      const localMean =
+        (D - B - C + A) /
+        area;
+
+      const source =
+        gray[
+          y * width + x
+        ];
+
+      const enhanced =
+        Math.max(
+          0,
+          Math.min(
+            255,
+            128 +
+            (source - localMean) *
+            gain
+          )
+        );
+
+      const i =
+        (y * width + x) * 4;
+
+      image.data[i] = enhanced;
+      image.data[i + 1] = enhanced;
+      image.data[i + 2] = enhanced;
+      image.data[i + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(
+    image,
+    0,
+    0
+  );
+
+  return qrEnhancedCanvas;
+}
+
+function scanCanvasWithJsQr(
+  canvas
+) {
+  if (!window.jsQR) {
+    return null;
+  }
+
+  const ctx = canvas.getContext(
+    '2d',
+    { willReadFrequently: true }
+  );
+
+  const imageData =
+    ctx.getImageData(
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
 
   const code = window.jsQR(
     imageData.data,
-    targetW,
-    targetH,
-    { inversionAttempts: 'attemptBoth' }
+    canvas.width,
+    canvas.height,
+    {
+      inversionAttempts:
+        'attemptBoth'
+    }
   );
 
   return code?.data || null;
+}
+
+async function scanCanvasWithQrScanner(
+  canvas
+) {
+  if (!window.QrScanner) {
+    return null;
+  }
+
+  const engine =
+    await ensureQrEngine();
+
+  if (!engine) {
+    return null;
+  }
+
+  try {
+    const result =
+      await window.QrScanner.scanImage(
+        canvas,
+        {
+          qrEngine: engine,
+          canvas: qrCanvas,
+          alsoTryWithoutScanRegion:
+            true,
+          returnDetailedScanResult:
+            true,
+        }
+      );
+
+    return result?.data || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+async function scanCanvasWithZxing(
+  canvas
+) {
+  const api =
+    await ensureZxingFallback();
+
+  if (!api?.readBarcodes) {
+    return null;
+  }
+
+  const ctx = canvas.getContext(
+    '2d',
+    { willReadFrequently: true }
+  );
+
+  const imageData =
+    ctx.getImageData(
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+  try {
+    const results =
+      await api.readBarcodes(
+        imageData,
+        {
+          formats: ['QRCode'],
+          tryHarder: true,
+          maxNumberOfSymbols: 1,
+        }
+      );
+
+    return (
+      results?.[0]?.text ||
+      results?.[0]?.data ||
+      null
+    );
+  } catch (err) {
+    console.debug(
+      'ZXing difficult-QR pass failed',
+      err
+    );
+
+    return null;
+  }
+}
+
+async function scanBestQrRescue() {
+  const best =
+    getBestQrCandidate();
+
+  if (!best) {
+    return null;
+  }
+
+  let decoded =
+    await scanCanvasWithQrScanner(
+      best
+    );
+
+  if (decoded) {
+    return decoded;
+  }
+
+  const enhanced =
+    buildLocalContrastQrCanvas(
+      best
+    );
+
+  decoded =
+    await scanCanvasWithQrScanner(
+      enhanced
+    );
+
+  if (decoded) {
+    return decoded;
+  }
+
+  decoded =
+    scanCanvasWithJsQr(
+      enhanced
+    );
+
+  if (decoded) {
+    return decoded;
+  }
+
+  if (
+    qrMissCount >= 8 &&
+    qrMissCount % 6 === 2
+  ) {
+    decoded =
+      await scanCanvasWithZxing(
+        enhanced
+      );
+
+    if (decoded) {
+      return decoded;
+    }
+  }
+
+  return null;
 }
 
 async function scanQrFrame() {
@@ -1148,43 +1794,67 @@ async function scanQrFrame() {
 
   try {
     let decoded = null;
-    const detailPass = qrMissCount > 0 && qrMissCount % 3 === 0;
-    const widePass = qrMissCount > 0 && qrMissCount % 8 === 0;
+    const detailPass =
+      qrMissCount > 0 &&
+      qrMissCount % 3 === 0;
+
+    const widePass =
+      qrMissCount > 0 &&
+      qrMissCount % 8 === 0;
 
     if (window.QrScanner) {
-      const engine = await ensureQrEngine();
+      const engine =
+        await ensureQrEngine();
 
       if (engine) {
         try {
-          const result = await window.QrScanner.scanImage(
-            els.video,
-            {
-              scanRegion: getQrScanRegion(detailPass),
-              qrEngine: engine,
-              canvas: qrCanvas,
-              alsoTryWithoutScanRegion: widePass,
-              returnDetailedScanResult: true,
-            }
-          );
+          const result =
+            await window.QrScanner.scanImage(
+              els.video,
+              {
+                scanRegion:
+                  getQrScanRegion(
+                    detailPass
+                  ),
+                qrEngine: engine,
+                canvas: qrCanvas,
+                alsoTryWithoutScanRegion:
+                  widePass,
+                returnDetailedScanResult:
+                  true,
+              }
+            );
 
-          decoded = result?.data || null;
+          decoded =
+            result?.data || null;
         } catch (err) {
-          // "No QR code found" is normal during continuous scanning.
+          // Missing QR is expected during continuous scanning.
         }
+      }
+    }
+
+    if (!decoded) {
+      rememberQrCandidate();
+
+      if (
+        qrFrameCount >= 3 &&
+        qrMissCount % 3 === 2
+      ) {
+        decoded =
+          await scanBestQrRescue();
       }
     }
 
     if (
       !decoded &&
-      window.jsQR &&
-      (
-        !window.QrScanner ||
-        qrMissCount % 6 === 5
-      )
+      !window.QrScanner &&
+      window.jsQR
     ) {
-      decoded = scanQrWithJsQrFallback(
-        qrMissCount % 12 === 11
-      );
+      decoded =
+        scanCanvasWithJsQr(
+          getBestQrCandidate() ||
+          qrFallbackCanvas
+        );
     }
 
     if (!decoded) {
@@ -1196,7 +1866,11 @@ async function scanQrFrame() {
     qrMissCount = 0;
     registerQrValue(decoded);
   } catch (err) {
-    console.error('QR scan error', err);
+    console.error(
+      'QR scan error',
+      err
+    );
+
     setStatus('QR読取エラー');
   } finally {
     qrScanBusy = false;
@@ -1204,15 +1878,25 @@ async function scanQrFrame() {
 }
 
 function stopQrFrameLoop() {
-  if (qrLoopHandle === null) return;
+  if (
+    qrLoopHandle === null
+  ) {
+    return;
+  }
 
   if (
     qrLoopUsesVideoCallback &&
-    typeof els.video.cancelVideoFrameCallback === 'function'
+    typeof els.video
+      .cancelVideoFrameCallback ===
+      'function'
   ) {
-    els.video.cancelVideoFrameCallback(qrLoopHandle);
+    els.video.cancelVideoFrameCallback(
+      qrLoopHandle
+    );
   } else {
-    cancelAnimationFrame(qrLoopHandle);
+    cancelAnimationFrame(
+      qrLoopHandle
+    );
   }
 
   qrLoopHandle = null;
@@ -1235,8 +1919,12 @@ function scheduleQrFrameLoop() {
       isQrMode() &&
       stream
     ) {
-      if (now - qrLastScanAt >= 45) {
+      if (
+        now -
+        qrLastScanAt >= 45
+      ) {
         qrLastScanAt = now;
+
         void scanQrFrame();
       }
 
@@ -1245,15 +1933,26 @@ function scheduleQrFrameLoop() {
   };
 
   if (
-    typeof els.video.requestVideoFrameCallback === 'function'
+    typeof els.video
+      .requestVideoFrameCallback ===
+      'function'
   ) {
-    qrLoopUsesVideoCallback = true;
+    qrLoopUsesVideoCallback =
+      true;
+
     qrLoopHandle =
-      els.video.requestVideoFrameCallback(callback);
+      els.video
+        .requestVideoFrameCallback(
+          callback
+        );
   } else {
-    qrLoopUsesVideoCallback = false;
+    qrLoopUsesVideoCallback =
+      false;
+
     qrLoopHandle =
-      requestAnimationFrame(callback);
+      requestAnimationFrame(
+        callback
+      );
   }
 }
 
@@ -1267,11 +1966,17 @@ async function startQrReading() {
 
   if (
     !window.QrScanner &&
-    !window.jsQR
+    !window.jsQR &&
+    !window.ZXingWASM
   ) {
-    setStatus('QRライブラリ読込失敗');
+    setStatus(
+      'QRライブラリ読込失敗'
+    );
+
     return;
   }
+
+  initSuccessAudio();
 
   loggingActive = true;
   setSettingsLocked(true);
@@ -1280,6 +1985,9 @@ async function startQrReading() {
   lastQrDetected = '';
   qrMissCount = 0;
   qrLastScanAt = 0;
+  qrFrameCursor = 0;
+  qrFrameCount = 0;
+  qrFrameScores.fill(0);
 
   setStatus('QR連続読取中');
   updatePrimaryButtons();
