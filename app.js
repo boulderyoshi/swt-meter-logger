@@ -1815,13 +1815,16 @@ async function scanQrFrame() {
 
     if (!decoded) {
       qrMissCount += 1;
-      lastQrDetected = '';
+      if (qrMissCount >= 2) lastQrDetected = '';
       return;
     }
 
     qrMissCount = 0;
 
-    if (lastQrDetected === decoded && qrSeen.has(decoded)) {
+    if (
+      lastQrDetected === decoded &&
+      (testMode || qrSeen.has(decoded))
+    ) {
       return;
     }
 
