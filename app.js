@@ -7,6 +7,11 @@ const els = {
   settingsModal: document.querySelector('#settingsModal'),
   settingsCloseBtn: document.querySelector('#settingsCloseBtn'),
   settingsRunningNote: document.querySelector('#settingsRunningNote'),
+  scanTarget: document.querySelector('#scanTarget'),
+  readModeField: document.querySelector('#readModeField'),
+  qrModeHint: document.querySelector('#qrModeHint'),
+  outputSettingsSection: document.querySelector('#outputSettingsSection'),
+  numericAdvancedSettings: document.querySelector('#numericAdvancedSettings'),
 
   readMode: document.querySelector('#readMode'),
   autoTriggerField: document.querySelector('#autoTriggerField'),
@@ -54,6 +59,7 @@ const els = {
   shareBtn: document.querySelector('#shareBtn'),
   saveBtn: document.querySelector('#saveBtn'),
 
+  currentReading: document.querySelector('.current-reading'),
   currentValue: document.querySelector('#currentValue'),
   currentUnit: document.querySelector('#currentUnit'),
   targetLine: document.querySelector('#targetLine'),
@@ -63,7 +69,13 @@ const els = {
   lastTime: document.querySelector('#lastTime'),
   exportSummary: document.querySelector('#exportSummary'),
 
+  recentTable: document.querySelector('#recentTable'),
   recentBody: document.querySelector('#recentBody'),
+  recentHeadTime: document.querySelector('#recentHeadTime'),
+  recentHeadCol: document.querySelector('#recentHeadCol'),
+  recentHeadRow: document.querySelector('#recentHeadRow'),
+  recentHeadValue: document.querySelector('#recentHeadValue'),
+  tablePreviewDetails: document.querySelector('#tablePreviewDetails'),
   previewTable: document.querySelector('#previewTable'),
 
   ocrMiniText: document.querySelector('#ocrMiniText'),
@@ -86,9 +98,18 @@ let changeCandidate = null;
 let changeCandidateCount = 0;
 
 const measurements = [];
+const qrRecords = [];
+const qrSeen = new Set();
+
 const changeCanvas = document.createElement('canvas');
 changeCanvas.width = 96;
 changeCanvas.height = 32;
+
+const qrCanvas = document.createElement('canvas');
+qrCanvas.width = 640;
+qrCanvas.height = 480;
+let qrScanBusy = false;
+let lastQrDetected = '';
 
 function setStatus(text) {
   els.status.textContent = text;
