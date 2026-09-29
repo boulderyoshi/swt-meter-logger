@@ -383,6 +383,10 @@ function updateRoi() {
 }
 
 function currentTargetDescription() {
+  if (isQrMode()) {
+    return `管理番号リスト / 次 ${qrRecords.length + 1}件目`;
+  }
+
   const cfg = readConfig();
   const position = positionForIndex(measurements.length, cfg);
 
@@ -402,11 +406,24 @@ function currentTargetDescription() {
 
 function updatePrimaryButtons() {
   const connected = Boolean(stream);
-  const auto = els.readMode.value === 'auto';
   const full = outputIsFull();
 
   els.cameraBtn.textContent =
     connected ? 'カメラ切断' : 'カメラ接続';
+
+  if (isQrMode()) {
+    els.readBtn.textContent =
+      loggingActive
+        ? 'QR連続読取停止'
+        : 'QR連続読取開始';
+
+    els.readBtn.classList.toggle('danger', loggingActive);
+    els.readBtn.classList.toggle('primary', !loggingActive);
+    els.readBtn.disabled = !connected;
+    return;
+  }
+
+  const auto = els.readMode.value === 'auto';
 
   if (!auto) {
     els.readBtn.textContent = '撮影';
@@ -438,6 +455,53 @@ function updatePrimaryButtons() {
 
 function updateRecentLog() {
   els.recentBody.textContent = '';
+
+  if (isQrMode()) {
+    els.recentTable.classList.add('qr-recent');
+    els.recentHeadTime.textContent = '時間';
+    els.recentHeadCol.textContent = '管理番号';
+    els.recentHeadRow.textContent = '状態';
+    els.recentHeadValue.textContent = '';
+
+    const recent = qrRecords.slice(-5).reverse();
+
+    for (const record of recent) {
+      const tr = document.createElement('tr');
+      const values = [
+        timeOnly(record.timestamp),
+        record.value,
+        '登録',
+        ''
+      ];
+
+      for (const value of values) {
+        const td = document.createElement('td');
+        td.textContent = String(value);
+        tr.append(td);
+      }
+
+      els.recentBody.append(tr);
+    }
+
+    for (let i = recent.length; i < 5; i++) {
+      const tr = document.createElement('tr');
+      tr.className = 'empty-row';
+      const td = document.createElement('td');
+      td.colSpan = 4;
+      td.textContent = '—';
+      tr.append(td);
+      els.recentBody.append(tr);
+    }
+
+    return;
+  }
+
+  els.recentTable.classList.remove('qr-recent');
+  els.recentHeadTime.textContent = '時間';
+  els.recentHeadCol.textContent = '列';
+  els.recentHeadRow.textContent = '行';
+  els.recentHeadValue.textContent = '値';
+
   const cfg = readConfig();
 
   const recent = measurements
@@ -622,6 +686,33 @@ function renderTablePreview() {
 }
 
 function updateDerivedUi() {
+  if (isQrMode()) {
+    const last = qrRecords[qrRecords.length - 1];
+
+    els.recordCount.textContent = String(qrRecords.length);
+    els.lastTime.textContent = last
+      ? timeOnly(last.timestamp)
+      : '--:--:--';
+
+    els.targetLine.textContent = currentTargetDescription();
+    els.exportSummary.textContent =
+      qrRecords.length === 0
+        ? '記録なし'
+        : `${qrRecords.length}件 / QR管理番号`;
+
+    els.currentValue.textContent = last?.value || '--';
+    els.confidence.textContent = 'QR';
+
+    const hasData = qrRecords.length > 0;
+    els.undoBtn.disabled = !hasData;
+    els.shareBtn.disabled = !hasData;
+    els.saveBtn.disabled = !hasData;
+
+    updateRecentLog();
+    updatePrimaryButtons();
+    return;
+  }
+
   els.recordCount.textContent = String(measurements.length);
 
   const last = measurements[measurements.length - 1];
