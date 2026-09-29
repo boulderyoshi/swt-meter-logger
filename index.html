@@ -12,18 +12,30 @@
   <link rel="manifest" href="./manifest.webmanifest?v=1.0.2" />
   <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png?v=1.0.2" />
   <link rel="icon" type="image/png" href="./assets/icon-192.png?v=1.0.2" />
-  <link rel="stylesheet" href="./styles.css?v=1.0.2" />
+  <link rel="stylesheet" href="./styles.css?v=1.0.3" />
 </head>
 <body>
   <main class="app">
     <header class="app-header">
-      <div class="brand"><h1>SWT Logger</h1><span>v1.0.2</span></div>
+      <div class="brand"><h1>SWT Logger</h1><span>v1.0.3</span></div>
       <nav class="top-menu" aria-label="設定メニュー">
         <button class="menu-tab" data-menu="target">読取対象</button>
         <button class="menu-tab" data-menu="roi">読取範囲</button>
         <button class="menu-tab" data-menu="method">読取方式</button>
         <button class="menu-tab" data-menu="output">出力方法</button>
       </nav>
+      <div class="settings-overview" aria-label="現在の設定">
+        <div class="settings-overview-head">
+          <strong>現在設定</strong>
+          <button id="resetSettingsBtn" class="reset-settings-btn">デフォルトに戻す</button>
+        </div>
+        <div class="settings-summary">
+          <span id="summaryTarget">対象: --</span>
+          <span id="summaryRoi">範囲: --</span>
+          <span id="summaryMethod">方式: --</span>
+          <span id="summaryOutput">出力: --</span>
+        </div>
+      </div>
     </header>
 
     <section class="work-card">
@@ -47,7 +59,6 @@
           </div>
           <label class="radio-row"><input type="radio" name="scanTarget" value="qr" /> QRコード</label>
           <div class="menu-actions">
-            <button class="primary save-settings-btn" data-save="target">設定保存</button>
             <button class="close-menu-btn">閉じる</button>
           </div>
         </section>
@@ -61,7 +72,6 @@
             <label>枠の縦幅 <span id="roiHLabel">24%</span><input id="roiH" type="range" min="8" max="90" value="24" /></label>
           </div>
           <div class="menu-actions">
-            <button class="primary save-settings-btn" data-save="roi">設定保存</button>
             <button class="close-menu-btn">閉じる</button>
           </div>
         </section>
@@ -79,7 +89,6 @@
             </label>
           </div>
           <div class="menu-actions">
-            <button class="primary save-settings-btn" data-save="method">設定保存</button>
             <button class="close-menu-btn">閉じる</button>
           </div>
         </section>
@@ -103,7 +112,6 @@
           </div>
 
           <div class="menu-actions">
-            <button class="primary save-settings-btn" data-save="output">設定保存</button>
             <button class="close-menu-btn">閉じる</button>
           </div>
         </section>
@@ -121,7 +129,8 @@
         </div>
       </div>
 
-      <div class="step-guide">
+      <div class="control-panel">
+        <div class="step-guide">
         <span id="stepCamera" class="step active">1 カメラ接続</span>
         <span class="arrow">→</span>
         <span id="stepRead" class="step">2 読み取り開始</span>
@@ -151,10 +160,11 @@
         </div>
       </div>
 
-      <div class="status-strip">
-        <span id="status">待機中</span>
-        <span>信頼度 <b id="confidence">--</b></span>
-        <span>保存 <b id="recordCount">0</b></span>
+        <div class="status-strip">
+          <span id="status">待機中</span>
+          <span>信頼度 <b id="confidence">--</b></span>
+          <span>保存 <b id="recordCount">0</b></span>
+        </div>
       </div>
     </section>
 
@@ -204,6 +214,6 @@
   <script src="./vendor/qr-scanner.umd.min.js?v=1.0.2"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.4/dist/iife/reader/index.js"></script>
-  <script src="./app.js?v=1.0.2"></script>
+  <script src="./app.js?v=1.0.3"></script>
 </body>
 </html>
