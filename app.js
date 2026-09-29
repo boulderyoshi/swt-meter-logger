@@ -107,10 +107,14 @@ changeCanvas.width = 96;
 changeCanvas.height = 32;
 
 const qrCanvas = document.createElement('canvas');
-qrCanvas.width = 640;
-qrCanvas.height = 480;
+const qrFallbackCanvas = document.createElement('canvas');
+let qrEnginePromise = null;
 let qrScanBusy = false;
 let lastQrDetected = '';
+let qrMissCount = 0;
+let qrLoopHandle = null;
+let qrLoopUsesVideoCallback = false;
+let qrLastScanAt = 0;
 
 function setStatus(text) {
   els.status.textContent = text;
@@ -316,6 +320,10 @@ function updateReadSettingsUi() {
 
   if (qr) {
     els.roiAdjustPanel.classList.add('hidden-field');
+    void ensureQrEngine();
+    if (stream) {
+      void optimizeCameraForQr();
+    }
   }
 
   updateDerivedUi();
