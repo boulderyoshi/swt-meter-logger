@@ -26,7 +26,7 @@ GitHub `main` is the canonical source for this project. Current implementation s
   - 数字用 / QR用を個別保存
   - 横位置・縦位置・幅・高さを調整
 - CSV出力
-  - 1行形式
+  - 1列形式
   - 表形式
   - 行・列の自動採番
   - 空白セル / 任意改行
