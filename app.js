@@ -563,6 +563,18 @@ function undoLast() {
 }
 
 function reflowRecordsForOutput() {
+  const settings = getSettings();
+
+  if (
+    settings.outputMode === 'table' &&
+    settings.useColumns &&
+    settings.useRows &&
+    records.length > settings.columnCount * settings.rowCount
+  ) {
+    setStatus('既存データが表の容量を超えています');
+    return false;
+  }
+
   const values = records.map(record => ({ ...record }));
   records.length = 0;
   history.length = 0;
@@ -597,6 +609,7 @@ function reflowRecordsForOutput() {
 
   recomputeQrSeen();
   updateDerivedUi();
+  return true;
 }
 
 function showReadResult(value, source, status, confidence, isTest) {
@@ -1735,6 +1748,7 @@ function handleQrDecoded(value, save) {
   els.confidence.textContent = 'QR';
 
   if (!save || testMode) {
+    lastQrDetected = normalized;
     showReadResult(normalized, 'qr', 'TEST', null, true);
     flashQrSuccess();
     playSuccessCue();
