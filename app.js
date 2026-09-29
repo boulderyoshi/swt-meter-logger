@@ -1061,7 +1061,7 @@ function getQrScanRegion(detail = false) {
   };
 }
 
-function scanQrWithJsQrFallback() {
+function scanQrWithJsQrFallback(enhanced = false) {
   if (!window.jsQR) return null;
 
   const rect = getQrSourceRect(0.92);
@@ -1082,6 +1082,10 @@ function scanQrWithJsQrFallback() {
     { willReadFrequently: true }
   );
 
+  ctx.filter = enhanced
+    ? 'grayscale(100%) contrast(185%)'
+    : 'none';
+
   ctx.drawImage(
     els.video,
     rect.x,
@@ -1093,6 +1097,8 @@ function scanQrWithJsQrFallback() {
     targetW,
     targetH
   );
+
+  ctx.filter = 'none';
 
   const imageData = ctx.getImageData(
     0,
@@ -1160,7 +1166,9 @@ async function scanQrFrame() {
         qrMissCount % 6 === 5
       )
     ) {
-      decoded = scanQrWithJsQrFallback();
+      decoded = scanQrWithJsQrFallback(
+        qrMissCount % 12 === 11
+      );
     }
 
     if (!decoded) {
