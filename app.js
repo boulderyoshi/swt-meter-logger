@@ -997,6 +997,8 @@ function registerQrValue(rawValue) {
     navigator.vibrate(45);
   }
 
+  playSuccessCue();
+
   els.cameraWrap.classList.remove('qr-success');
   void els.cameraWrap.offsetWidth;
   els.cameraWrap.classList.add('qr-success');
