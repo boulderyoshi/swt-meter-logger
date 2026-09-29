@@ -837,6 +837,55 @@ function toggleRoiPanel(show) {
   );
 }
 
+async function optimizeCameraTrack(track, qrMode = false) {
+  if (!track) return;
+
+  try {
+    if ('contentHint' in track) {
+      track.contentHint = 'detail';
+    }
+
+    const caps = track.getCapabilities?.() || {};
+    const advanced = {};
+
+    if (caps.focusMode?.includes('continuous')) {
+      advanced.focusMode = 'continuous';
+    }
+
+    if (caps.exposureMode?.includes('continuous')) {
+      advanced.exposureMode = 'continuous';
+    }
+
+    if (caps.whiteBalanceMode?.includes('continuous')) {
+      advanced.whiteBalanceMode = 'continuous';
+    }
+
+    if (Object.keys(advanced).length) {
+      await track.applyConstraints({ advanced: [advanced] });
+    }
+
+    if (qrMode) {
+      try {
+        await track.applyConstraints({
+          width: { ideal: 3840 },
+          height: { ideal: 2160 },
+          frameRate: { ideal: 30 }
+        });
+      } catch (err) {
+        console.debug('high-resolution QR constraints unavailable', err);
+      }
+    }
+  } catch (err) {
+    console.debug('camera fine-tuning unavailable', err);
+  }
+}
+
+async function optimizeCameraForQr() {
+  const track = stream?.getVideoTracks?.()[0];
+  if (!track) return;
+  await optimizeCameraTrack(track, true);
+}
+
 async function startCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
     alert('このブラウザではカメラを利用できません。iPhone SafariをHTTPSで開いてください。');
@@ -844,39 +893,28 @@ async function startCamera() {
   }
 
   try {
+    const qrMode = isQrMode();
+
     stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: {
         facingMode: { ideal: 'environment' },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
+        width: { ideal: qrMode ? 3840 : 1920 },
+        height: { ideal: qrMode ? 2160 : 1080 },
+        frameRate: { ideal: 30 }
       }
     });
 
     const track = stream.getVideoTracks()[0];
-
-    try {
-      const caps = track.getCapabilities?.() || {};
-      const advanced = {};
-
-      if (caps.focusMode?.includes('continuous')) {
-        advanced.focusMode = 'continuous';
-      }
-
-      if (caps.exposureMode?.includes('continuous')) {
-        advanced.exposureMode = 'continuous';
-      }
-
-      if (Object.keys(advanced).length) {
-        await track.applyConstraints({ advanced: [advanced] });
-      }
-    } catch (err) {
-      console.debug('camera fine-tuning unavailable', err);
-    }
+    await optimizeCameraTrack(track, qrMode);
 
     els.video.srcObject = stream;
     await els.video.play();
     await sleep(350);
+
+    if (qrMode) {
+      void ensureQrEngine();
+    }
 
     setStatus('カメラ接続済み');
     updatePrimaryButtons();
