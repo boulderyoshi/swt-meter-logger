@@ -1315,7 +1315,7 @@ async function ensureQrEngine() {
 
   if (!qrEnginePromise) {
     qrEnginePromise = window.QrScanner
-      .createQrEngine('./vendor/qr-scanner-worker.min.js?v=0.12.1')
+      .createQrEngine('./vendor/qr-scanner-worker.min.js?v=1.0.0')
       .catch(err => {
         console.warn('QR worker unavailable', err);
         qrEnginePromise = null;
