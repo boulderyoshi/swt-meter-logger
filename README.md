@@ -6,6 +6,10 @@ iPhone Safariのカメラを使い、データ出力を持たない機器の数�
 
 公開URL: https://boulderyoshi.github.io/swt-meter-logger/
 
+## Source of truth
+
+GitHub `main` is the canonical source for this project. Current implementation state and handoff notes are maintained in [PROJECT_STATE.md](./PROJECT_STATE.md).
+
 ## 主な機能
 
 - 数字OCR
