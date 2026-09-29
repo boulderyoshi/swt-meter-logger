@@ -7,7 +7,7 @@ This repository is the source of truth for SWT Logger.
 - Repository: `boulderyoshi/swt-meter-logger`
 - Canonical branch: `main`
 - Public app: https://boulderyoshi.github.io/swt-meter-logger/
-- Current public version: **v1.0.3**
+- Current public version: **v1.0.4**
 
 Do not treat chat transcripts, downloaded ZIP files, browser caches, or local copies as authoritative if they differ from `main`.
 
