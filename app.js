@@ -108,13 +108,29 @@ changeCanvas.height = 32;
 
 const qrCanvas = document.createElement('canvas');
 const qrFallbackCanvas = document.createElement('canvas');
+const qrEnhancedCanvas = document.createElement('canvas');
+const qrSharpnessCanvas = document.createElement('canvas');
+qrSharpnessCanvas.width = 160;
+qrSharpnessCanvas.height = 160;
+
+const qrFrameCanvases = [
+  document.createElement('canvas'),
+  document.createElement('canvas'),
+  document.createElement('canvas'),
+];
+const qrFrameScores = [0, 0, 0];
+
+let qrFrameCursor = 0;
+let qrFrameCount = 0;
 let qrEnginePromise = null;
+let zxingReadyPromise = null;
 let qrScanBusy = false;
 let lastQrDetected = '';
 let qrMissCount = 0;
 let qrLoopHandle = null;
 let qrLoopUsesVideoCallback = false;
 let qrLastScanAt = 0;
+let successAudioContext = null;
 
 function setStatus(text) {
   els.status.textContent = text;
