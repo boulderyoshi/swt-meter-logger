@@ -60,6 +60,7 @@ const els = {
   saveBtn: document.querySelector('#saveBtn'),
 
   currentReading: document.querySelector('.current-reading'),
+  currentReadingLabel: document.querySelector('#currentReadingLabel'),
   currentValue: document.querySelector('#currentValue'),
   currentUnit: document.querySelector('#currentUnit'),
   targetLine: document.querySelector('#targetLine'),
@@ -689,6 +690,7 @@ function updateDerivedUi() {
   if (isQrMode()) {
     const last = qrRecords[qrRecords.length - 1];
 
+    els.currentReadingLabel.textContent = '管理番号';
     els.recordCount.textContent = String(qrRecords.length);
     els.lastTime.textContent = last
       ? timeOnly(last.timestamp)
@@ -713,9 +715,14 @@ function updateDerivedUi() {
     return;
   }
 
+  els.currentReadingLabel.textContent = '現在値';
   els.recordCount.textContent = String(measurements.length);
 
   const last = measurements[measurements.length - 1];
+  els.currentValue.textContent = last?.value || '--.-';
+  els.confidence.textContent = last
+    ? `${Math.round(last.confidence ?? 0)}%`
+    : '--';
   els.lastTime.textContent = last
     ? timeOnly(last.timestamp)
     : '--:--:--';
@@ -2273,6 +2280,11 @@ outputControls.forEach(
       updateOutputSettingsUi
     );
   }
+);
+
+els.scanTarget.addEventListener(
+  'change',
+  updateReadSettingsUi
 );
 
 els.readMode.addEventListener(
