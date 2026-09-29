@@ -149,7 +149,8 @@ function checkedValue(name, fallback) {
 }
 
 function setCheckedValue(name, value) {
-  const input = document.querySelector(`input[name="${name}"][value="${CSS.escape(String(value))}"]`);
+  const inputs = [...document.querySelectorAll(`input[name="${name}"]`)];
+  const input = inputs.find(item => item.value === String(value));
   if (input) input.checked = true;
 }
 
@@ -260,16 +261,20 @@ function updateNestedSettingsUi() {
     settings.outputMode !== 'table' || !settings.allowGaps
   );
 
+  els.blankBtn.disabled = testMode || outputFull();
+  els.nextRowBtn.disabled = testMode || outputFull();
+
   els.ocrMini.classList.toggle('hidden-field', settings.scanTarget === 'qr');
   els.cameraWrap.classList.toggle('qr-mode', settings.scanTarget === 'qr');
 
   els.currentReadingLabel.textContent =
     settings.scanTarget === 'qr' ? '管理番号' : '現在値';
 
-  els.currentUnit.textContent =
-    settings.scanTarget === 'number' && settings.numberMode === 'decimal'
-      ? ''
-      : '';
+  els.currentUnit.textContent = '';
+
+  if (stream && settings.scanTarget === 'qr') {
+    void optimizeCameraTrack(stream.getVideoTracks()[0], true);
+  }
 
   updateRoi();
   updatePrimaryUi();
@@ -1990,7 +1995,19 @@ async function shareCsv() {
   downloadCsv();
 }
 
+function outputSignature(settings) {
+  return JSON.stringify({
+    outputMode: settings.outputMode,
+    useColumns: settings.useColumns,
+    columnCount: settings.columnCount,
+    useRows: settings.useRows,
+    rowCount: settings.rowCount,
+    allowGaps: settings.allowGaps,
+  });
+}
+
 function menuSettingsChanged() {
+  if (readingActive) stopReading(false);
   updateNestedSettingsUi();
 }
 
@@ -2015,9 +2032,15 @@ for (const button of els.saveSettingsBtns) {
 
     if (readingActive) stopReading(false);
 
+    const before = loadSavedSettings();
+    const current = getSettings();
     saveSettings(section);
 
-    if (section === 'output' && !testMode) {
+    if (
+      section === 'output' &&
+      !testMode &&
+      outputSignature(before || {}) !== outputSignature(current)
+    ) {
       reflowRecordsForOutput();
     } else {
       updateDerivedUi();
