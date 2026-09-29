@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.5 — 2026-09-30
+
+- Corrected `1列` mode to store each reading in the next row of a single column.
+- Changed the preview from horizontal cells to a vertical single-column list.
+- Changed CSV output for this mode from comma-separated horizontal values to one value per line.
+- Updated row/column position display and recent-record coordinates accordingly.
+
 ## v1.0.4 — 2026-09-30
 
 - Renamed the single-output-mode UI label from `1行` to `1列`.
