@@ -27,18 +27,6 @@
     </header>
 
     <section class="work-card">
-      <div class="camera-wrap" id="cameraWrap">
-        <video id="video" playsinline muted></video>
-        <div class="roi" id="roi" aria-label="読み取り範囲"></div>
-        <div id="testBadge" class="test-badge hidden-field">テストモード</div>
-
-        <div class="ocr-mini" id="ocrMini" aria-label="OCRプレビュー">
-          <div class="ocr-mini-title">OCR</div>
-          <canvas id="debugCanvas"></canvas>
-          <strong id="ocrMiniText">--</strong>
-        </div>
-      </div>
-
       <div class="menu-stage">
         <section class="menu-panel hidden-field" data-panel="target">
           <h2>読取対象</h2>
@@ -119,6 +107,18 @@
             <button class="close-menu-btn">閉じる</button>
           </div>
         </section>
+      </div>
+
+      <div class="camera-wrap" id="cameraWrap">
+        <video id="video" playsinline muted></video>
+        <div class="roi" id="roi" aria-label="読み取り範囲"></div>
+        <div id="testBadge" class="test-badge hidden-field">テストモード</div>
+
+        <div class="ocr-mini" id="ocrMini" aria-label="OCRプレビュー">
+          <div class="ocr-mini-title">OCR</div>
+          <canvas id="debugCanvas"></canvas>
+          <strong id="ocrMiniText">--</strong>
+        </div>
       </div>
 
       <div class="step-guide">
