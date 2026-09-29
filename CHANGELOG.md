@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.2 — 2026-09-29
+
+- Replaced the malformed touch/PWA icon assets with the approved cropped artwork.
+- Regenerated 180px, 192px, 512px, and 1024px icon sizes from the corrected source.
+- Bumped icon/cache URLs to force Safari to fetch the corrected icon.
+
 ## v1.0.1 — 2026-09-29
 
 - Replaced the official app icon with the user-trimmed artwork.
