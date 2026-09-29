@@ -13,7 +13,7 @@
     <header class="app-header">
       <div>
         <h1>SWT Logger</h1>
-        <span>v0.7</span>
+        <span>v0.8</span>
       </div>
       <button id="settingsBtn" class="icon-btn" aria-label="設定">⚙</button>
     </header>
@@ -77,7 +77,7 @@
       <div class="recent-table-wrap">
         <table id="recentTable">
           <thead>
-            <tr><th>時間</th><th>列</th><th>行</th><th>値</th></tr>
+            <tr><th id="recentHeadTime">時間</th><th id="recentHeadCol">列</th><th id="recentHeadRow">行</th><th id="recentHeadValue">値</th></tr>
           </thead>
           <tbody id="recentBody"></tbody>
         </table>
@@ -118,6 +118,14 @@
           <h3>読み取り</h3>
           <div class="settings-grid">
             <label>
+              読み取り対象
+              <select id="scanTarget">
+                <option value="number" selected>数字OCR</option>
+                <option value="qr">QR管理番号</option>
+              </select>
+            </label>
+
+            <label id="readModeField">
               読み取り方法
               <select id="readMode">
                 <option value="auto" selected>自動読み取り</option>
@@ -144,9 +152,10 @@
               </select>
             </label>
           </div>
+          <p id="qrModeHint" class="setup-hint hidden-field">QR管理番号モードは、カメラをQRへ順番に向けるだけで連続登録します。同じ管理番号は重複登録しません。</p>
         </section>
 
-        <section class="modal-section">
+        <section class="modal-section" id="outputSettingsSection">
           <h3>出力形式</h3>
           <label class="block-label">
             形式
@@ -216,7 +225,7 @@ C</textarea>
           </div>
         </section>
 
-        <details class="advanced-details">
+        <details class="advanced-details" id="numericAdvancedSettings">
           <summary>高度な設定</summary>
           <div class="advanced-body">
             <div class="settings-grid">
@@ -262,6 +271,7 @@ C</textarea>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
