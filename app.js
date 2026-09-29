@@ -333,7 +333,7 @@ function updateSettingsSummary() {
         ? `自動・${settings.timerSeconds}秒`
         : '自動・画面変化';
 
-  let output = '1行';
+  let output = '1列';
   if (settings.outputMode === 'table') {
     const details = [];
     if (settings.useColumns) details.push(`横${settings.columnCount}`);
@@ -888,7 +888,7 @@ function updateDerivedUi() {
 
   els.exportSummary.textContent =
     records.length
-      ? `${records.length}件 / ${getSettings().outputMode === 'table' ? '表形式' : '1行'}`
+      ? `${records.length}件 / ${getSettings().outputMode === 'table' ? '表形式' : '1列'}`
       : '記録なし';
 
   const hasData = records.length > 0;
