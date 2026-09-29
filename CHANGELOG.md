@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.1 — 2026-09-29
+
+- Replaced the official app icon with the user-trimmed artwork.
+- Refreshed iPhone touch icon and PWA icon assets.
+- Bumped icon/cache asset URLs so Safari does not reuse the previous icon.
+
 ## v1.0.0 — 2026-09-29
 
 First formal public release.
