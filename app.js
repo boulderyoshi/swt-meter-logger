@@ -2196,6 +2196,8 @@ function stopAutoReading(
   }
 
   timer = null;
+  stopQrFrameLoop();
+  qrScanBusy = false;
   loggingActive = false;
   changeBaseline = null;
   changeCandidate = null;
