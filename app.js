@@ -1,49 +1,21 @@
 const els = {
   video: document.querySelector('#video'),
-  roi: document.querySelector('#roi'),
   cameraWrap: document.querySelector('#cameraWrap'),
+  roi: document.querySelector('#roi'),
+  testBadge: document.querySelector('#testBadge'),
+  ocrMini: document.querySelector('#ocrMini'),
+  debugCanvas: document.querySelector('#debugCanvas'),
+  ocrMiniText: document.querySelector('#ocrMiniText'),
 
-  settingsBtn: document.querySelector('#settingsBtn'),
-  settingsModal: document.querySelector('#settingsModal'),
-  settingsCloseBtn: document.querySelector('#settingsCloseBtn'),
-  settingsRunningNote: document.querySelector('#settingsRunningNote'),
-  scanTarget: document.querySelector('#scanTarget'),
-  readModeField: document.querySelector('#readModeField'),
-  qrModeHint: document.querySelector('#qrModeHint'),
-  outputSettingsSection: document.querySelector('#outputSettingsSection'),
-  numericAdvancedSettings: document.querySelector('#numericAdvancedSettings'),
+  menuTabs: [...document.querySelectorAll('.menu-tab')],
+  menuPanels: [...document.querySelectorAll('.menu-panel')],
+  saveSettingsBtns: [...document.querySelectorAll('.save-settings-btn')],
+  closeMenuBtns: [...document.querySelectorAll('.close-menu-btn')],
 
-  readMode: document.querySelector('#readMode'),
-  autoTriggerField: document.querySelector('#autoTriggerField'),
-  autoTrigger: document.querySelector('#autoTrigger'),
-  intervalField: document.querySelector('#intervalField'),
-  intervalSec: document.querySelector('#intervalSec'),
+  numberOptions: document.querySelector('#numberOptions'),
+  decimalDigitsField: document.querySelector('#decimalDigitsField'),
+  decimalDigits: document.querySelector('#decimalDigits'),
 
-  outputMode: document.querySelector('#outputMode'),
-  tableSettings: document.querySelector('#tableSettings'),
-  fixedColumns: document.querySelector('#fixedColumns'),
-  columnCountField: document.querySelector('#columnCountField'),
-  columnCount: document.querySelector('#columnCount'),
-  columnHeaderMode: document.querySelector('#columnHeaderMode'),
-  columnHeadersField: document.querySelector('#columnHeadersField'),
-  columnHeaders: document.querySelector('#columnHeaders'),
-  fixedRows: document.querySelector('#fixedRows'),
-  rowCountField: document.querySelector('#rowCountField'),
-  rowCount: document.querySelector('#rowCount'),
-  rowHeaderMode: document.querySelector('#rowHeaderMode'),
-  rowHeadersField: document.querySelector('#rowHeadersField'),
-  rowHeaders: document.querySelector('#rowHeaders'),
-  cornerHeaderField: document.querySelector('#cornerHeaderField'),
-  cornerHeader: document.querySelector('#cornerHeader'),
-  fillRuleHint: document.querySelector('#fillRuleHint'),
-
-  changeSensitivity: document.querySelector('#changeSensitivity'),
-  decimalPlaces: document.querySelector('#decimalPlaces'),
-  unit: document.querySelector('#unit'),
-
-  roiAdjustBtn: document.querySelector('#roiAdjustBtn'),
-  roiAdjustPanel: document.querySelector('#roiAdjustPanel'),
-  roiAdjustCloseBtn: document.querySelector('#roiAdjustCloseBtn'),
   roiX: document.querySelector('#roiX'),
   roiY: document.querySelector('#roiY'),
   roiW: document.querySelector('#roiW'),
@@ -53,13 +25,26 @@ const els = {
   roiWLabel: document.querySelector('#roiWLabel'),
   roiHLabel: document.querySelector('#roiHLabel'),
 
+  autoOptions: document.querySelector('#autoOptions'),
+  timerSecondsField: document.querySelector('#timerSecondsField'),
+  timerSeconds: document.querySelector('#timerSeconds'),
+
+  tableOptions: document.querySelector('#tableOptions'),
+  useColumns: document.querySelector('#useColumns'),
+  columnCount: document.querySelector('#columnCount'),
+  useRows: document.querySelector('#useRows'),
+  rowCount: document.querySelector('#rowCount'),
+  allowGaps: document.querySelector('#allowGaps'),
+
+  stepCamera: document.querySelector('#stepCamera'),
+  stepRead: document.querySelector('#stepRead'),
   cameraBtn: document.querySelector('#cameraBtn'),
   readBtn: document.querySelector('#readBtn'),
-  undoBtn: document.querySelector('#undoBtn'),
-  shareBtn: document.querySelector('#shareBtn'),
-  saveBtn: document.querySelector('#saveBtn'),
+  testModeBtn: document.querySelector('#testModeBtn'),
+  gapActions: document.querySelector('#gapActions'),
+  blankBtn: document.querySelector('#blankBtn'),
+  nextRowBtn: document.querySelector('#nextRowBtn'),
 
-  currentReading: document.querySelector('.current-reading'),
   currentReadingLabel: document.querySelector('#currentReadingLabel'),
   currentValue: document.querySelector('#currentValue'),
   currentUnit: document.querySelector('#currentUnit'),
@@ -67,47 +52,50 @@ const els = {
   status: document.querySelector('#status'),
   confidence: document.querySelector('#confidence'),
   recordCount: document.querySelector('#recordCount'),
-  lastTime: document.querySelector('#lastTime'),
-  exportSummary: document.querySelector('#exportSummary'),
 
-  recentTable: document.querySelector('#recentTable'),
+  undoBtn: document.querySelector('#undoBtn'),
   recentBody: document.querySelector('#recentBody'),
-  recentHeadTime: document.querySelector('#recentHeadTime'),
-  recentHeadCol: document.querySelector('#recentHeadCol'),
-  recentHeadRow: document.querySelector('#recentHeadRow'),
-  recentHeadValue: document.querySelector('#recentHeadValue'),
+
+  exportSummary: document.querySelector('#exportSummary'),
+  shareBtn: document.querySelector('#shareBtn'),
+  saveBtn: document.querySelector('#saveBtn'),
+  lastTime: document.querySelector('#lastTime'),
+
   tablePreviewDetails: document.querySelector('#tablePreviewDetails'),
   previewTable: document.querySelector('#previewTable'),
 
-  ocrMiniText: document.querySelector('#ocrMiniText'),
   ocrProgress: document.querySelector('#ocrProgress'),
   ocrText: document.querySelector('#ocrText'),
-  debugCanvas: document.querySelector('#debugCanvas'),
-
   captureCanvas: document.querySelector('#captureCanvas'),
   ocrCanvas: document.querySelector('#ocrCanvas'),
 };
 
+const SETTINGS_KEY = 'swt-logger-settings-v012';
+
 let stream = null;
 let worker = null;
 let timer = null;
-let loggingActive = false;
+let readingActive = false;
 let isReading = false;
+let testMode = false;
+let preTestSettings = null;
+let openMenuName = null;
+
 let changeCheckBusy = false;
 let changeBaseline = null;
 let changeCandidate = null;
 let changeCandidateCount = 0;
 
-const measurements = [];
-const qrRecords = [];
+const records = [];
+const history = [];
 const qrSeen = new Set();
+let cursor = { row: 0, col: 0 };
 
 const changeCanvas = document.createElement('canvas');
 changeCanvas.width = 96;
 changeCanvas.height = 32;
 
 const qrCanvas = document.createElement('canvas');
-const qrFallbackCanvas = document.createElement('canvas');
 const qrEnhancedCanvas = document.createElement('canvas');
 const qrSharpnessCanvas = document.createElement('canvas');
 qrSharpnessCanvas.width = 160;
@@ -125,11 +113,11 @@ let qrFrameCount = 0;
 let qrEnginePromise = null;
 let zxingReadyPromise = null;
 let qrScanBusy = false;
-let lastQrDetected = '';
 let qrMissCount = 0;
 let qrLoopHandle = null;
 let qrLoopUsesVideoCallback = false;
 let qrLastScanAt = 0;
+let lastQrDetected = '';
 let successAudioContext = null;
 
 function setStatus(text) {
@@ -146,13 +134,6 @@ function clampInt(value, min, max, fallback) {
   return Math.max(min, Math.min(max, n));
 }
 
-function parseList(value) {
-  return String(value || '')
-    .split(/[,\t\r\n]+/)
-    .map(item => item.trim())
-    .filter(Boolean);
-}
-
 function nowIsoLocal() {
   const d = new Date();
   const pad = n => String(n).padStart(2, '0');
@@ -163,239 +144,186 @@ function timeOnly(timestamp) {
   return timestamp ? timestamp.slice(11) : '--:--:--';
 }
 
-function isQrMode() {
-  return els.scanTarget.value === 'qr';
+function checkedValue(name, fallback) {
+  return document.querySelector(`input[name="${name}"]:checked`)?.value || fallback;
 }
 
-function readConfig() {
-  if (els.outputMode.value === 'simple') {
-    return { mode: 'simple' };
-  }
+function setCheckedValue(name, value) {
+  const input = document.querySelector(`input[name="${name}"][value="${CSS.escape(String(value))}"]`);
+  if (input) input.checked = true;
+}
 
-  const fixedColumns = els.fixedColumns.checked;
-  const fixedRows = els.fixedRows.checked;
-
+function getSettings() {
   return {
-    mode: 'table',
-    fixedColumns,
-    columnCount: fixedColumns
-      ? clampInt(els.columnCount.value, 1, 200, 3)
-      : null,
-    columnHeaderMode: els.columnHeaderMode.value,
-    columnHeaders: parseList(els.columnHeaders.value),
+    scanTarget: checkedValue('scanTarget', 'number'),
+    numberMode: checkedValue('numberMode', 'integer'),
+    decimalDigits: clampInt(els.decimalDigits.value, 1, 5, 1),
 
-    fixedRows,
-    rowCount: fixedRows
-      ? clampInt(els.rowCount.value, 1, 1000, 3)
-      : null,
-    rowHeaderMode: els.rowHeaderMode.value,
-    rowHeaders: parseList(els.rowHeaders.value),
+    roiX: clampInt(els.roiX.value, 5, 95, 50),
+    roiY: clampInt(els.roiY.value, 5, 95, 56),
+    roiW: clampInt(els.roiW.value, 10, 95, 62),
+    roiH: clampInt(els.roiH.value, 8, 90, 24),
 
-    cornerHeader: els.cornerHeader.value.trim(),
+    readMode: checkedValue('readMode', 'auto'),
+    autoTrigger: checkedValue('autoTrigger', 'change'),
+    timerSeconds: clampInt(els.timerSeconds.value, 1, 300, 5),
+
+    outputMode: checkedValue('outputMode', 'one-line'),
+    useColumns: els.useColumns.checked,
+    columnCount: Math.max(1, clampInt(els.columnCount.value, 1, 9999, 1)),
+    useRows: els.useRows.checked,
+    rowCount: Math.max(1, clampInt(els.rowCount.value, 1, 9999, 1)),
+    allowGaps: els.allowGaps.checked,
   };
 }
 
-function getColumnLabel(index, cfg = readConfig()) {
-  if (cfg.mode !== 'table' || cfg.columnHeaderMode === 'none') {
-    return String(index + 1);
-  }
+function applySettings(settings) {
+  if (!settings) return;
 
-  if (cfg.columnHeaderMode === 'custom') {
-    return cfg.columnHeaders[index] || String(index + 1);
-  }
+  setCheckedValue('scanTarget', settings.scanTarget ?? 'number');
+  setCheckedValue('numberMode', settings.numberMode ?? 'integer');
+  els.decimalDigits.value = String(clampInt(settings.decimalDigits, 1, 5, 1));
 
-  return String(index + 1);
+  els.roiX.value = String(clampInt(settings.roiX, 5, 95, 50));
+  els.roiY.value = String(clampInt(settings.roiY, 5, 95, 56));
+  els.roiW.value = String(clampInt(settings.roiW, 10, 95, 62));
+  els.roiH.value = String(clampInt(settings.roiH, 8, 90, 24));
+
+  setCheckedValue('readMode', settings.readMode ?? 'auto');
+  setCheckedValue('autoTrigger', settings.autoTrigger ?? 'change');
+  els.timerSeconds.value = String(clampInt(settings.timerSeconds, 1, 300, 5));
+
+  setCheckedValue('outputMode', settings.outputMode ?? 'one-line');
+  els.useColumns.checked = Boolean(settings.useColumns);
+  els.columnCount.value = String(Math.max(1, clampInt(settings.columnCount, 1, 9999, 1)));
+  els.useRows.checked = Boolean(settings.useRows);
+  els.rowCount.value = String(Math.max(1, clampInt(settings.rowCount, 1, 9999, 1)));
+  els.allowGaps.checked = Boolean(settings.allowGaps);
+
+  updateAllSettingsUi();
 }
 
-function getRowLabel(index, cfg = readConfig()) {
-  if (cfg.mode !== 'table' || cfg.rowHeaderMode === 'none') {
-    return String(index + 1);
+function loadSavedSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (err) {
+    console.warn('settings load failed', err);
+    return null;
   }
-
-  if (cfg.rowHeaderMode === 'custom') {
-    return cfg.rowHeaders[index] || String(index + 1);
-  }
-
-  return String(index + 1);
 }
 
-function positionForIndex(index, cfg = readConfig()) {
-  if (cfg.mode === 'simple') {
-    return { row: 0, col: index };
+function saveSettings(label = '設定') {
+  const settings = getSettings();
+
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    setStatus(`${label}を保存しました`);
+  } catch (err) {
+    console.warn('settings save failed', err);
+    setStatus('設定保存に失敗しました');
   }
 
-  if (cfg.fixedColumns) {
-    return {
-      row: Math.floor(index / cfg.columnCount),
-      col: index % cfg.columnCount,
-    };
-  }
-
-  if (cfg.fixedRows) {
-    return {
-      row: index % cfg.rowCount,
-      col: Math.floor(index / cfg.rowCount),
-    };
-  }
-
-  return { row: 0, col: index };
+  return settings;
 }
 
-function tableCapacity(cfg = readConfig()) {
-  if (
-    cfg.mode === 'table' &&
-    cfg.fixedColumns &&
-    cfg.fixedRows
-  ) {
-    return cfg.columnCount * cfg.rowCount;
-  }
-
-  return Infinity;
+function isQrMode() {
+  return getSettings().scanTarget === 'qr';
 }
 
-function outputIsFull(cfg = readConfig()) {
-  if (isQrMode()) return false;
-  return measurements.length >= tableCapacity(cfg);
+function isTableMode() {
+  return getSettings().outputMode === 'table';
 }
 
-function updateOutputSettingsUi() {
-  const cfg = readConfig();
-  const tableMode = cfg.mode === 'table';
+function updateNestedSettingsUi() {
+  const settings = getSettings();
 
-  els.tableSettings.classList.toggle('hidden-field', !tableMode);
+  els.numberOptions.classList.toggle('hidden-field', settings.scanTarget !== 'number');
+  els.decimalDigitsField.classList.toggle(
+    'hidden-field',
+    settings.scanTarget !== 'number' || settings.numberMode !== 'decimal'
+  );
 
-  if (tableMode) {
-    els.columnCountField.classList.toggle(
-      'hidden-field',
-      !cfg.fixedColumns
-    );
+  els.autoOptions.classList.toggle('hidden-field', settings.readMode !== 'auto');
+  els.timerSecondsField.classList.toggle(
+    'hidden-field',
+    settings.readMode !== 'auto' || settings.autoTrigger !== 'timer'
+  );
 
-    els.rowCountField.classList.toggle(
-      'hidden-field',
-      !cfg.fixedRows
-    );
+  els.tableOptions.classList.toggle('hidden-field', settings.outputMode !== 'table');
+  els.columnCount.disabled = settings.outputMode !== 'table' || !settings.useColumns;
+  els.rowCount.disabled = settings.outputMode !== 'table' || !settings.useRows;
 
-    els.columnHeadersField.classList.toggle(
-      'hidden-field',
-      cfg.columnHeaderMode !== 'custom'
-    );
+  els.gapActions.classList.toggle(
+    'hidden-field',
+    settings.outputMode !== 'table' || !settings.allowGaps
+  );
 
-    els.rowHeadersField.classList.toggle(
-      'hidden-field',
-      cfg.rowHeaderMode !== 'custom'
-    );
+  els.ocrMini.classList.toggle('hidden-field', settings.scanTarget === 'qr');
+  els.cameraWrap.classList.toggle('qr-mode', settings.scanTarget === 'qr');
 
-    const showCorner =
-      cfg.columnHeaderMode !== 'none' &&
-      cfg.rowHeaderMode !== 'none';
+  els.currentReadingLabel.textContent =
+    settings.scanTarget === 'qr' ? '管理番号' : '現在値';
 
-    els.cornerHeaderField.classList.toggle(
-      'hidden-field',
-      !showCorner
-    );
+  els.currentUnit.textContent =
+    settings.scanTarget === 'number' && settings.numberMode === 'decimal'
+      ? ''
+      : '';
 
-    if (cfg.fixedColumns && cfg.fixedRows) {
-      els.fillRuleHint.textContent =
-        `左→右に記録し、${cfg.columnCount}列ごとに次の行へ進みます。最大 ${cfg.columnCount}列 × ${cfg.rowCount}行です。`;
-    } else if (cfg.fixedColumns) {
-      els.fillRuleHint.textContent =
-        `左→右に記録し、${cfg.columnCount}列ごとに次の行へ進みます。行数は自動で増えます。`;
-    } else if (cfg.fixedRows) {
-      els.fillRuleHint.textContent =
-        `上→下に記録し、${cfg.rowCount}行ごとに次の列へ進みます。列数は自動で増えます。`;
-    } else {
-      els.fillRuleHint.textContent =
-        '列数・行数とも未指定の場合は、1行のまま右方向へ追加します。';
-    }
-  }
-
+  updateRoi();
+  updatePrimaryUi();
   updateDerivedUi();
 }
 
-function updateReadSettingsUi() {
-  const qr = isQrMode();
-  const auto = els.readMode.value === 'auto';
-
-  els.readModeField.classList.toggle('hidden-field', qr);
-  els.autoTriggerField.classList.toggle(
-    'hidden-field',
-    qr || !auto
-  );
-  els.intervalField.classList.toggle(
-    'hidden-field',
-    qr || !auto || els.autoTrigger.value !== 'interval'
-  );
-  els.qrModeHint.classList.toggle('hidden-field', !qr);
-  els.outputSettingsSection.classList.toggle('hidden-field', qr);
-  els.numericAdvancedSettings.classList.toggle('hidden-field', qr);
-  els.tablePreviewDetails.classList.toggle('hidden-field', qr);
-
-  els.cameraWrap.classList.toggle('qr-mode', qr);
-  els.currentReading.classList.toggle('qr-reading', qr);
-  els.currentUnit.classList.toggle('hidden-field', qr);
-
-  if (qr) {
-    els.roiAdjustPanel.classList.add('hidden-field');
-    void ensureQrEngine();
-    if (stream) {
-      void optimizeCameraForQr();
-    }
-  }
-
-  updateDerivedUi();
-  updatePrimaryButtons();
+function updateAllSettingsUi() {
+  updateNestedSettingsUi();
 }
 
-function setSettingsLocked(locked) {
-  els.settingsRunningNote.classList.toggle(
-    'hidden-field',
-    !locked
-  );
+function openMenu(name) {
+  openMenuName = name;
 
-  [
-    els.scanTarget,
-    els.readMode,
-    els.autoTrigger,
-    els.intervalSec,
-    els.outputMode,
-    els.fixedColumns,
-    els.columnCount,
-    els.columnHeaderMode,
-    els.columnHeaders,
-    els.fixedRows,
-    els.rowCount,
-    els.rowHeaderMode,
-    els.rowHeaders,
-    els.cornerHeader,
-    els.changeSensitivity,
-    els.decimalPlaces,
-    els.unit,
-  ].forEach(control => {
-    control.disabled = locked;
-  });
+  for (const tab of els.menuTabs) {
+    tab.classList.toggle('active', tab.dataset.menu === name);
+  }
+
+  for (const panel of els.menuPanels) {
+    panel.classList.toggle('hidden-field', panel.dataset.panel !== name);
+  }
+}
+
+function closeMenu() {
+  openMenuName = null;
+  for (const tab of els.menuTabs) tab.classList.remove('active');
+  for (const panel of els.menuPanels) panel.classList.add('hidden-field');
 }
 
 function updateRoi() {
-  const x = Number(els.roiX.value);
-  const y = Number(els.roiY.value);
-  const w = Number(els.roiW.value);
-  const h = Number(els.roiH.value);
+  const settings = getSettings();
 
-  els.roi.style.left = `${x}%`;
-  els.roi.style.top = `${y}%`;
-  els.roi.style.width = `${w}%`;
-  els.roi.style.height = `${h}%`;
+  if (settings.scanTarget === 'qr') {
+    els.roi.style.left = '50%';
+    els.roi.style.top = '50%';
+    els.roi.style.width = '58%';
+    els.roi.style.height = '58%';
+  } else {
+    els.roi.style.left = `${settings.roiX}%`;
+    els.roi.style.top = `${settings.roiY}%`;
+    els.roi.style.width = `${settings.roiW}%`;
+    els.roi.style.height = `${settings.roiH}%`;
+  }
 
-  els.roiXLabel.textContent = `${x}%`;
-  els.roiYLabel.textContent = `${y}%`;
-  els.roiWLabel.textContent = `${w}%`;
-  els.roiHLabel.textContent = `${h}%`;
+  els.roiXLabel.textContent = `${settings.roiX}%`;
+  els.roiYLabel.textContent = `${settings.roiY}%`;
+  els.roiWLabel.textContent = `${settings.roiW}%`;
+  els.roiHLabel.textContent = `${settings.roiH}%`;
 
   if (
     stream &&
-    loggingActive &&
-    els.readMode.value === 'auto' &&
-    els.autoTrigger.value === 'change'
+    readingActive &&
+    settings.scanTarget === 'number' &&
+    settings.readMode === 'auto' &&
+    settings.autoTrigger === 'change'
   ) {
     try {
       changeBaseline = captureFingerprint();
@@ -407,148 +335,250 @@ function updateRoi() {
   }
 }
 
+function outputFull() {
+  const settings = getSettings();
+
+  if (
+    settings.outputMode !== 'table' ||
+    !settings.useRows
+  ) {
+    return false;
+  }
+
+  return cursor.row >= settings.rowCount;
+}
+
+function nextCursorPosition(current = cursor) {
+  const settings = getSettings();
+  const next = { row: current.row, col: current.col };
+
+  if (settings.outputMode !== 'table') {
+    return { row: 0, col: current.col + 1 };
+  }
+
+  if (settings.useColumns) {
+    if (next.col + 1 >= settings.columnCount) {
+      next.row += 1;
+      next.col = 0;
+    } else {
+      next.col += 1;
+    }
+  } else {
+    next.col += 1;
+  }
+
+  return next;
+}
+
 function currentTargetDescription() {
-  if (isQrMode()) {
-    return `管理番号リスト / 次 ${qrRecords.length + 1}件目`;
+  const settings = getSettings();
+
+  if (settings.outputMode === 'one-line') {
+    return `1行 / ${records.length + 1}列`;
   }
 
-  const cfg = readConfig();
-  const position = positionForIndex(measurements.length, cfg);
-
-  if (cfg.mode === 'simple') {
-    return `1行 / ${position.col + 1}列`;
-  }
-
-  if (outputIsFull(cfg)) {
+  if (outputFull()) {
     return '表入力完了';
   }
 
-  const rowLabel = getRowLabel(position.row, cfg);
-  const colLabel = getColumnLabel(position.col, cfg);
-
-  return `${position.row + 1}行(${rowLabel}) / ${position.col + 1}列(${colLabel})`;
+  return `${cursor.row + 1}行 / ${cursor.col + 1}列`;
 }
 
-function updatePrimaryButtons() {
-  const connected = Boolean(stream);
-  const full = outputIsFull();
+function recomputeQrSeen() {
+  qrSeen.clear();
+  for (const record of records) {
+    if (record.source === 'qr') qrSeen.add(record.value);
+  }
+}
 
-  els.cameraBtn.textContent =
-    connected ? 'カメラ切断' : 'カメラ接続';
+function stopIfOutputFull() {
+  if (!outputFull()) return false;
 
-  if (isQrMode()) {
-    els.readBtn.textContent =
-      loggingActive
-        ? 'QR連続読取停止'
-        : 'QR連続読取開始';
+  if (readingActive) stopReading(true);
+  setStatus(testMode ? 'テスト: 行数上限' : '指定行数まで完了');
+  return true;
+}
 
-    els.readBtn.classList.toggle('danger', loggingActive);
-    els.readBtn.classList.toggle('primary', !loggingActive);
-    els.readBtn.disabled = !connected;
+function pushRecord(value, source, status, confidence) {
+  if (testMode) {
+    showReadResult(value, source, status, confidence, true);
+    return false;
+  }
+
+  if (outputFull()) {
+    stopIfOutputFull();
+    return false;
+  }
+
+  const settings = getSettings();
+  const prevCursor = { ...cursor };
+
+  const record = {
+    id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+    timestamp: nowIsoLocal(),
+    value: String(value),
+    source,
+    status,
+    confidence: confidence ?? null,
+    row: settings.outputMode === 'one-line' ? 0 : cursor.row,
+    col: settings.outputMode === 'one-line' ? records.length : cursor.col,
+  };
+
+  records.push(record);
+  history.push({
+    type: 'record',
+    recordId: record.id,
+    source,
+    value: record.value,
+    prevCursor,
+  });
+
+  if (source === 'qr') qrSeen.add(record.value);
+
+  cursor =
+    settings.outputMode === 'one-line'
+      ? { row: 0, col: records.length }
+      : nextCursorPosition(cursor);
+
+  showReadResult(record.value, source, status, confidence, false);
+  updateDerivedUi();
+  stopIfOutputFull();
+
+  return true;
+}
+
+function insertBlank() {
+  const settings = getSettings();
+
+  if (
+    testMode ||
+    settings.outputMode !== 'table' ||
+    !settings.allowGaps ||
+    outputFull()
+  ) {
     return;
   }
 
-  const auto = els.readMode.value === 'auto';
+  const prevCursor = { ...cursor };
+  history.push({ type: 'blank', prevCursor });
+  cursor = nextCursorPosition(cursor);
 
-  if (!auto) {
-    els.readBtn.textContent = '撮影';
-    els.readBtn.classList.add('primary');
-    els.readBtn.classList.remove('danger');
-    els.readBtn.disabled =
-      !connected || isReading || full;
+  setStatus('空白セルを挿入しました');
+  updateDerivedUi();
+  stopIfOutputFull();
+}
+
+function moveNextRow() {
+  const settings = getSettings();
+
+  if (
+    testMode ||
+    settings.outputMode !== 'table' ||
+    !settings.allowGaps ||
+    outputFull()
+  ) {
     return;
   }
 
-  els.readBtn.textContent =
-    loggingActive
-      ? '自動読み取り停止'
-      : '自動読み取り開始';
+  const prevCursor = { ...cursor };
+  history.push({ type: 'newline', prevCursor });
 
-  els.readBtn.classList.toggle(
-    'danger',
-    loggingActive
-  );
+  cursor = {
+    row: cursor.row + 1,
+    col: 0,
+  };
 
-  els.readBtn.classList.toggle(
-    'primary',
-    !loggingActive
-  );
+  setStatus('次の行へ移動しました');
+  updateDerivedUi();
+  stopIfOutputFull();
+}
 
-  els.readBtn.disabled =
-    !connected || (!loggingActive && full);
+function undoLast() {
+  if (testMode || !history.length) return;
+
+  const action = history.pop();
+
+  if (action.type === 'record') {
+    const index = records.findIndex(record => record.id === action.recordId);
+    if (index >= 0) records.splice(index, 1);
+  }
+
+  cursor = { ...action.prevCursor };
+  recomputeQrSeen();
+
+  setStatus('1つ戻しました');
+  updateDerivedUi();
+}
+
+function reflowRecordsForOutput() {
+  const values = records.map(record => ({ ...record }));
+  records.length = 0;
+  history.length = 0;
+  cursor = { row: 0, col: 0 };
+
+  for (const old of values) {
+    if (outputFull()) break;
+
+    const settings = getSettings();
+    const prevCursor = { ...cursor };
+
+    const record = {
+      ...old,
+      row: settings.outputMode === 'one-line' ? 0 : cursor.row,
+      col: settings.outputMode === 'one-line' ? records.length : cursor.col,
+    };
+
+    records.push(record);
+    history.push({
+      type: 'record',
+      recordId: record.id,
+      source: record.source,
+      value: record.value,
+      prevCursor,
+    });
+
+    cursor =
+      settings.outputMode === 'one-line'
+        ? { row: 0, col: records.length }
+        : nextCursorPosition(cursor);
+  }
+
+  recomputeQrSeen();
+  updateDerivedUi();
+}
+
+function showReadResult(value, source, status, confidence, isTest) {
+  els.currentValue.textContent = String(value);
+
+  if (source === 'qr') {
+    els.confidence.textContent = 'QR';
+  } else {
+    els.confidence.textContent =
+      confidence === null || confidence === undefined
+        ? '--'
+        : `${Math.round(confidence)}%`;
+  }
+
+  if (isTest) {
+    setStatus(`テスト読取: ${value}`);
+    return;
+  }
+
+  setStatus(status || 'OK');
 }
 
 function updateRecentLog() {
   els.recentBody.textContent = '';
 
-  if (isQrMode()) {
-    els.recentTable.classList.add('qr-recent');
-    els.recentHeadTime.textContent = '時間';
-    els.recentHeadCol.textContent = '管理番号';
-    els.recentHeadRow.textContent = '状態';
-    els.recentHeadValue.textContent = 'No.';
+  const recent = records.slice(-5).reverse();
 
-    const recent = qrRecords
-      .map((record, index) => ({ record, index }))
-      .slice(-5)
-      .reverse();
-
-    for (const item of recent) {
-      const tr = document.createElement('tr');
-      const values = [
-        timeOnly(item.record.timestamp),
-        item.record.value,
-        '登録',
-        item.index + 1
-      ];
-
-      for (const value of values) {
-        const td = document.createElement('td');
-        td.textContent = String(value);
-        tr.append(td);
-      }
-
-      els.recentBody.append(tr);
-    }
-
-    for (let i = recent.length; i < 5; i++) {
-      const tr = document.createElement('tr');
-      tr.className = 'empty-row';
-      const td = document.createElement('td');
-      td.colSpan = 4;
-      td.textContent = '—';
-      tr.append(td);
-      els.recentBody.append(tr);
-    }
-
-    return;
-  }
-
-  els.recentTable.classList.remove('qr-recent');
-  els.recentHeadTime.textContent = '時間';
-  els.recentHeadCol.textContent = '列';
-  els.recentHeadRow.textContent = '行';
-  els.recentHeadValue.textContent = '値';
-
-  const cfg = readConfig();
-
-  const recent = measurements
-    .map((record, index) => ({
-      record,
-      index,
-      pos: positionForIndex(index, cfg),
-    }))
-    .slice(-5)
-    .reverse();
-
-  for (const item of recent) {
+  for (const record of recent) {
     const tr = document.createElement('tr');
-
     const values = [
-      timeOnly(item.record.timestamp),
-      item.pos.col + 1,
-      item.pos.row + 1,
-      item.record.value,
+      timeOnly(record.timestamp),
+      record.col + 1,
+      record.row + 1,
+      record.value,
     ];
 
     for (const value of values) {
@@ -571,83 +601,69 @@ function updateRecentLog() {
   }
 }
 
-function computeExportSize(cfg = readConfig()) {
-  if (cfg.mode !== 'table') {
-    return { rows: 1, cols: Math.max(measurements.length, 1) };
+function previewSize() {
+  const settings = getSettings();
+
+  if (settings.outputMode === 'one-line') {
+    return {
+      rows: 1,
+      cols: Math.max(records.length + 1, 1),
+    };
   }
 
-  let maxRow = -1;
-  let maxCol = -1;
+  const maxRow = Math.max(
+    cursor.row,
+    ...records.map(record => record.row),
+    0
+  );
 
-  measurements.forEach((_, index) => {
-    const pos = positionForIndex(index, cfg);
-    maxRow = Math.max(maxRow, pos.row);
-    maxCol = Math.max(maxCol, pos.col);
-  });
+  const maxCol = Math.max(
+    cursor.col,
+    ...records.map(record => record.col),
+    0
+  );
 
-  const customRows =
-    cfg.rowHeaderMode === 'custom'
-      ? cfg.rowHeaders.length
-      : 0;
-
-  const customCols =
-    cfg.columnHeaderMode === 'custom'
-      ? cfg.columnHeaders.length
-      : 0;
-
-  const rows = cfg.fixedRows
-    ? Math.max(cfg.rowCount, maxRow + 1, 1)
-    : Math.max(maxRow + 1, customRows, 1);
-
-  const cols = cfg.fixedColumns
-    ? Math.max(cfg.columnCount, maxCol + 1, 1)
-    : Math.max(maxCol + 1, customCols, 1);
-
-  return { rows, cols };
+  return {
+    rows: settings.useRows
+      ? settings.rowCount
+      : Math.max(maxRow + 1, 1),
+    cols: settings.useColumns
+      ? settings.columnCount
+      : Math.max(maxCol + 1, 1),
+  };
 }
 
-function buildTableMatrix(cfg = readConfig()) {
-  const { rows, cols } = computeExportSize(cfg);
+function buildMatrix() {
+  const { rows, cols } = previewSize();
   const matrix = Array.from(
     { length: rows },
     () => Array(cols).fill('')
   );
 
-  measurements.forEach((record, index) => {
-    const pos = positionForIndex(index, cfg);
-
-    while (matrix.length <= pos.row) {
-      matrix.push(Array(cols).fill(''));
+  for (const record of records) {
+    if (record.row < rows && record.col < cols) {
+      matrix[record.row][record.col] = record.value;
     }
-
-    while (matrix[pos.row].length <= pos.col) {
-      matrix[pos.row].push('');
-    }
-
-    matrix[pos.row][pos.col] = record.value;
-  });
+  }
 
   return matrix;
 }
 
-function renderTablePreview() {
+function renderPreview() {
   els.previewTable.textContent = '';
-  const cfg = readConfig();
+  const settings = getSettings();
 
-  if (cfg.mode === 'simple') {
+  if (settings.outputMode === 'one-line') {
     const tbody = document.createElement('tbody');
     const tr = document.createElement('tr');
 
-    const count = Math.max(measurements.length + 1, 1);
+    const count = Math.max(records.length + 1, 1);
 
     for (let i = 0; i < count; i++) {
       const td = document.createElement('td');
-      td.textContent = measurements[i]?.value ?? '';
+      td.textContent = records[i]?.value ?? '';
 
-      if (i === measurements.length) {
-        td.classList.add('active-cell');
-      }
-
+      if (i === records.length) td.classList.add('active-cell');
       tr.append(td);
     }
 
@@ -656,50 +672,41 @@ function renderTablePreview() {
     return;
   }
 
-  const matrix = buildTableMatrix(cfg);
-  const { rows, cols } = computeExportSize(cfg);
+  const matrix = buildMatrix();
+  const { rows, cols } = previewSize();
 
-  if (cfg.columnHeaderMode !== 'none') {
-    const thead = document.createElement('thead');
-    const tr = document.createElement('tr');
+  const thead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+  const corner = document.createElement('th');
+  corner.textContent = '';
+  headerRow.append(corner);
 
-    if (cfg.rowHeaderMode !== 'none') {
-      const th = document.createElement('th');
-      th.textContent = cfg.cornerHeader || '';
-      tr.append(th);
-    }
-
-    for (let c = 0; c < cols; c++) {
-      const th = document.createElement('th');
-      th.textContent = getColumnLabel(c, cfg);
-      tr.append(th);
-    }
-
-    thead.append(tr);
-    els.previewTable.append(thead);
+  for (let col = 0; col < cols; col++) {
+    const th = document.createElement('th');
+    th.textContent = String(col + 1);
+    headerRow.append(th);
   }
 
-  const next = positionForIndex(measurements.length, cfg);
+  thead.append(headerRow);
+  els.previewTable.append(thead);
+
   const tbody = document.createElement('tbody');
 
-  for (let r = 0; r < rows; r++) {
+  for (let row = 0; row < rows; row++) {
     const tr = document.createElement('tr');
+    const rowHeader = document.createElement('td');
+    rowHeader.textContent = String(row + 1);
+    rowHeader.classList.add('row-header');
+    tr.append(rowHeader);
 
-    if (cfg.rowHeaderMode !== 'none') {
+    for (let col = 0; col < cols; col++) {
       const td = document.createElement('td');
-      td.textContent = getRowLabel(r, cfg);
-      td.classList.add('row-header');
-      tr.append(td);
-    }
-
-    for (let c = 0; c < cols; c++) {
-      const td = document.createElement('td');
-      td.textContent = matrix[r]?.[c] ?? '';
+      td.textContent = matrix[row]?.[col] ?? '';
 
       if (
-        !outputIsFull(cfg) &&
-        r === next.row &&
-        c === next.col
+        !outputFull() &&
+        row === cursor.row &&
+        col === cursor.col
       ) {
         td.classList.add('active-cell');
       }
@@ -713,153 +720,97 @@ function renderTablePreview() {
   els.previewTable.append(tbody);
 }
 
-function updateDerivedUi() {
-  if (isQrMode()) {
-    const last = qrRecords[qrRecords.length - 1];
+function updatePrimaryUi() {
+  const settings = getSettings();
+  const connected = Boolean(stream);
 
-    els.currentReadingLabel.textContent = '管理番号';
-    els.recordCount.textContent = String(qrRecords.length);
-    els.lastTime.textContent = last
-      ? timeOnly(last.timestamp)
-      : '--:--:--';
+  els.cameraBtn.textContent =
+    connected ? 'カメラ切断' : 'カメラ接続';
 
-    els.targetLine.textContent = currentTargetDescription();
-    els.exportSummary.textContent =
-      qrRecords.length === 0
-        ? '記録なし'
-        : `${qrRecords.length}件 / QR管理番号`;
+  els.stepCamera.classList.toggle('active', !connected);
+  els.stepRead.classList.toggle('active', connected && !readingActive);
 
-    els.currentValue.textContent = last?.value || '--';
-    els.confidence.textContent = 'QR';
+  if (settings.readMode === 'manual') {
+    els.readBtn.textContent =
+      settings.scanTarget === 'qr'
+        ? 'QR撮影'
+        : '撮影';
 
-    const hasData = qrRecords.length > 0;
-    els.undoBtn.disabled = !hasData;
-    els.shareBtn.disabled = !hasData;
-    els.saveBtn.disabled = !hasData;
+    els.readBtn.classList.add('primary');
+    els.readBtn.classList.remove('danger');
+    els.readBtn.disabled =
+      !connected || isReading || outputFull();
 
-    updateRecentLog();
-    updatePrimaryButtons();
     return;
   }
 
-  els.currentReadingLabel.textContent = '現在値';
-  els.recordCount.textContent = String(measurements.length);
+  els.readBtn.textContent =
+    readingActive
+      ? '読み取り停止'
+      : '読み取り開始';
 
-  const last = measurements[measurements.length - 1];
-  els.currentValue.textContent = last?.value || '--.-';
-  els.confidence.textContent = last
-    ? `${Math.round(last.confidence ?? 0)}%`
-    : '--';
-  els.lastTime.textContent = last
-    ? timeOnly(last.timestamp)
-    : '--:--:--';
+  els.readBtn.classList.toggle('danger', readingActive);
+  els.readBtn.classList.toggle('primary', !readingActive);
+  els.readBtn.disabled =
+    !connected || (!readingActive && outputFull());
+}
 
+function updateDerivedUi() {
+  els.recordCount.textContent = String(records.length);
   els.targetLine.textContent = currentTargetDescription();
 
-  const cfg = readConfig();
-  els.exportSummary.textContent =
-    measurements.length === 0
-      ? '記録なし'
-      : `${measurements.length}件 / ${cfg.mode === 'simple' ? '1行CSV' : '表形式'}`;
+  const last = records[records.length - 1];
+  els.lastTime.textContent =
+    last ? timeOnly(last.timestamp) : '--:--:--';
 
-  const hasData = measurements.length > 0;
-  els.undoBtn.disabled = !hasData;
+  els.exportSummary.textContent =
+    records.length
+      ? `${records.length}件 / ${getSettings().outputMode === 'table' ? '表形式' : '1行'}`
+      : '記録なし';
+
+  const hasData = records.length > 0;
+  els.undoBtn.disabled = testMode || !history.length;
   els.shareBtn.disabled = !hasData;
   els.saveBtn.disabled = !hasData;
 
   updateRecentLog();
-  renderTablePreview();
-  updatePrimaryButtons();
+  renderPreview();
+  updatePrimaryUi();
 }
 
-function saveMeasurement(value, timestamp, status, confidence) {
-  const cfg = readConfig();
+function setTestMode(enabled) {
+  if (readingActive) stopReading(false);
 
-  if (outputIsFull(cfg)) {
-    setStatus('表入力完了');
-    return false;
+  if (enabled === testMode) return;
+
+  if (enabled) {
+    preTestSettings = getSettings();
+    const saved = loadSavedSettings() || getSettings();
+    applySettings(saved);
+    testMode = true;
+    setStatus('テストモード');
+  } else {
+    testMode = false;
+    if (preTestSettings) applySettings(preTestSettings);
+    preTestSettings = null;
+    setStatus('通常モード');
   }
 
-  measurements.push({
-    value,
-    timestamp,
-    status,
-    confidence,
-  });
+  els.testModeBtn.classList.toggle('active', testMode);
+  els.testModeBtn.textContent =
+    testMode ? 'テストモード終了' : 'テストモード';
+
+  els.testBadge.classList.toggle('hidden-field', !testMode);
+  els.cameraWrap.classList.toggle('test-mode', testMode);
 
   updateDerivedUi();
-
-  if (outputIsFull(cfg) && loggingActive) {
-    stopAutoReading(true);
-    setStatus('測定完了');
-  }
-
-  return true;
-}
-
-function undoLast() {
-  if (isQrMode()) {
-    const removed = qrRecords.pop();
-    if (!removed) return;
-
-    qrSeen.delete(removed.value);
-    lastQrDetected = '';
-    setStatus(`1つ戻しました: ${removed.value}`);
-    updateDerivedUi();
-    return;
-  }
-
-  if (!measurements.length) return;
-
-  measurements.pop();
-
-  if (
-    loggingActive &&
-    els.autoTrigger.value === 'change' &&
-    stream
-  ) {
-    try {
-      changeBaseline = captureFingerprint();
-      changeCandidate = null;
-      changeCandidateCount = 0;
-    } catch (err) {
-      console.debug('baseline reset skipped', err);
-    }
-  }
-
-  setStatus('1つ戻しました');
-  updateDerivedUi();
-}
-
-function openSettings() {
-  setSettingsLocked(loggingActive);
-  els.settingsModal.classList.remove('hidden-field');
-}
-
-function closeSettings() {
-  els.settingsModal.classList.add('hidden-field');
-  updateDerivedUi();
-}
-
-function toggleRoiPanel(show) {
-  const shouldShow =
-    typeof show === 'boolean'
-      ? show
-      : els.roiAdjustPanel.classList.contains('hidden-field');
-
-  els.roiAdjustPanel.classList.toggle(
-    'hidden-field',
-    !shouldShow
-  );
 }
 
 async function optimizeCameraTrack(track, qrMode = false) {
   if (!track) return;
 
   try {
-    if ('contentHint' in track) {
-      track.contentHint = 'detail';
-    }
+    if ('contentHint' in track) track.contentHint = 'detail';
 
     const caps = track.getCapabilities?.() || {};
     const advanced = {};
@@ -885,26 +836,20 @@ async function optimizeCameraTrack(track, qrMode = false) {
         await track.applyConstraints({
           width: { ideal: 3840 },
           height: { ideal: 2160 },
-          frameRate: { ideal: 30 }
+          frameRate: { ideal: 30 },
         });
       } catch (err) {
         console.debug('high-resolution QR constraints unavailable', err);
       }
     }
   } catch (err) {
-    console.debug('camera fine-tuning unavailable', err);
+    console.debug('camera optimization unavailable', err);
   }
-}
-
-async function optimizeCameraForQr() {
-  const track = stream?.getVideoTracks?.()[0];
-  if (!track) return;
-  await optimizeCameraTrack(track, true);
 }
 
 async function startCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
-    alert('このブラウザではカメラを利用できません。iPhone SafariをHTTPSで開いてください。');
+    alert('iPhone SafariをHTTPSで開き、カメラを許可してください。');
     return;
   }
 
@@ -917,35 +862,27 @@ async function startCamera() {
         facingMode: { ideal: 'environment' },
         width: { ideal: qrMode ? 3840 : 1920 },
         height: { ideal: qrMode ? 2160 : 1080 },
-        frameRate: { ideal: 30 }
-      }
+        frameRate: { ideal: 30 },
+      },
     });
 
-    const track = stream.getVideoTracks()[0];
-    await optimizeCameraTrack(track, qrMode);
+    await optimizeCameraTrack(stream.getVideoTracks()[0], qrMode);
 
     els.video.srcObject = stream;
     await els.video.play();
-    await sleep(350);
-
-    if (qrMode) {
-      void ensureQrEngine();
-    }
+    await sleep(300);
 
     setStatus('カメラ接続済み');
-    updatePrimaryButtons();
+    updatePrimaryUi();
   } catch (err) {
     console.error(err);
     stream = null;
     setStatus('カメラ起動失敗');
-    alert('カメラを起動できません。Safariのカメラ権限とHTTPS接続を確認してください。');
   }
 }
 
 function stopCamera() {
-  if (loggingActive) {
-    stopAutoReading(false);
-  }
+  if (readingActive) stopReading(false);
 
   if (stream) {
     stream.getTracks().forEach(track => track.stop());
@@ -954,10 +891,12 @@ function stopCamera() {
   stream = null;
   els.video.srcObject = null;
   setStatus('カメラ未接続');
-  updatePrimaryButtons();
+  updatePrimaryUi();
 }
 
 async function toggleCamera() {
+  initSuccessAudio();
+
   if (stream) {
     stopCamera();
   } else {
@@ -965,173 +904,11 @@ async function toggleCamera() {
   }
 }
 
-function registerQrValue(rawValue) {
-  const value = String(rawValue || '').trim();
-  if (!value) return false;
-
-  if (qrSeen.has(value)) {
-    els.currentValue.textContent = value;
-
-    if (lastQrDetected !== value) {
-      setStatus(`登録済み: ${value}`);
-    }
-
-    lastQrDetected = value;
-    return false;
-  }
-
-  const timestamp = nowIsoLocal();
-
-  qrSeen.add(value);
-  qrRecords.push({
-    value,
-    timestamp,
-    status: 'REGISTERED'
-  });
-
-  lastQrDetected = value;
-  els.currentValue.textContent = value;
-  setStatus(`登録: ${value}`);
-
-  if (navigator.vibrate) {
-    navigator.vibrate(45);
-  }
-
-  playSuccessCue();
-
-  els.cameraWrap.classList.remove('qr-success');
-  void els.cameraWrap.offsetWidth;
-  els.cameraWrap.classList.add('qr-success');
-
-  updateDerivedUi();
-  return true;
-}
-
-async function ensureQrEngine() {
-  if (!window.QrScanner) {
-    return null;
-  }
-
-  if (!qrEnginePromise) {
-    qrEnginePromise = window.QrScanner
-      .createQrEngine('./vendor/qr-scanner-worker.min.js')
-      .catch(err => {
-        console.warn('QR worker unavailable, using fallback decoders', err);
-        qrEnginePromise = null;
-        return null;
-      });
-  }
-
-  return qrEnginePromise;
-}
-
-async function ensureZxingFallback() {
-  const api = window.ZXingWASM;
-
-  if (!api?.readBarcodes) {
-    return null;
-  }
-
-  if (!zxingReadyPromise) {
-    try {
-      const prep = api.prepareZXingModule?.({
-        overrides: {
-          locateFile(path, prefix) {
-            if (path.endsWith('.wasm')) {
-              return 'https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.4/dist/reader/zxing_reader.wasm';
-            }
-
-            return prefix + path;
-          },
-        },
-        fireImmediately: true,
-      });
-
-      zxingReadyPromise = Promise
-        .resolve(prep)
-        .then(() => api)
-        .catch(err => {
-          console.warn('ZXing WASM unavailable', err);
-          zxingReadyPromise = null;
-          return null;
-        });
-    } catch (err) {
-      console.warn('ZXing WASM init failed', err);
-      return null;
-    }
-  }
-
-  return zxingReadyPromise;
-}
-
-function initSuccessAudio() {
-  try {
-    if (!successAudioContext) {
-      const AudioContextClass =
-        window.AudioContext ||
-        window.webkitAudioContext;
-
-      if (!AudioContextClass) {
-        return;
-      }
-
-      successAudioContext =
-        new AudioContextClass();
-    }
-
-    if (successAudioContext.state === 'suspended') {
-      void successAudioContext.resume();
-    }
-  } catch (err) {
-    console.debug('success audio unavailable', err);
-  }
-}
-
-function playSuccessCue() {
-  try {
-    initSuccessAudio();
-
-    const ctx = successAudioContext;
-    if (!ctx) return;
-
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(190, now);
-    osc.frequency.exponentialRampToValueAtTime(
-      105,
-      now + 0.085
-    );
-
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(
-      0.12,
-      now + 0.006
-    );
-    gain.gain.exponentialRampToValueAtTime(
-      0.0001,
-      now + 0.09
-    );
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start(now);
-    osc.stop(now + 0.095);
-  } catch (err) {
-    console.debug('success sound failed', err);
-  }
-}
-
-function getQrSourceRect(fraction = 0.78) {
+function getVisibleVideoRect() {
   const vw = els.video.videoWidth;
   const vh = els.video.videoHeight;
 
-  if (!vw || !vh) {
-    throw new Error('video not ready');
-  }
+  if (!vw || !vh) throw new Error('video not ready');
 
   const wrap = els.cameraWrap.getBoundingClientRect();
   const shownAspect = wrap.width / wrap.height;
@@ -1150,186 +927,40 @@ function getQrSourceRect(fraction = 0.78) {
     visibleY = (vh - visibleH) / 2;
   }
 
-  const width = visibleW * fraction;
-  const height = visibleH * fraction;
+  return { visibleX, visibleY, visibleW, visibleH };
+}
+
+function getNumericRoiRect() {
+  const settings = getSettings();
+  const { visibleX, visibleY, visibleW, visibleH } = getVisibleVideoRect();
+
+  const rw = settings.roiW / 100;
+  const rh = settings.roiH / 100;
+  const rx = settings.roiX / 100;
+  const ry = settings.roiY / 100;
+
+  const left = Math.max(0, Math.min(1 - rw, rx - rw / 2));
+  const top = Math.max(0, Math.min(1 - rh, ry - rh / 2));
 
   return {
-    x: Math.max(
-      0,
-      Math.round(
-        visibleX +
-        (visibleW - width) / 2
-      )
-    ),
-    y: Math.max(
-      0,
-      Math.round(
-        visibleY +
-        (visibleH - height) / 2
-      )
-    ),
-    width: Math.max(
-      1,
-      Math.round(width)
-    ),
-    height: Math.max(
-      1,
-      Math.round(height)
-    ),
+    x: visibleX + visibleW * left,
+    y: visibleY + visibleH * top,
+    width: visibleW * rw,
+    height: visibleH * rh,
   };
 }
 
-function getQrScanRegion(detail = false) {
-  const rect = getQrSourceRect(
-    detail ? 0.90 : 0.80
-  );
+function captureNumericRoi() {
+  const rect = getNumericRoiRect();
+  const outW = 1100;
+  const outH = Math.max(220, Math.round(outW * rect.height / rect.width));
 
-  const targetLongSide =
-    detail ? 1600 : 960;
+  els.captureCanvas.width = outW;
+  els.captureCanvas.height = outH;
 
-  const scale = Math.min(
-    1,
-    targetLongSide /
-      Math.max(
-        rect.width,
-        rect.height
-      )
-  );
-
-  return {
-    x: rect.x,
-    y: rect.y,
-    width: rect.width,
-    height: rect.height,
-    downScaledWidth: Math.max(
-      1,
-      Math.round(
-        rect.width * scale
-      )
-    ),
-    downScaledHeight: Math.max(
-      1,
-      Math.round(
-        rect.height * scale
-      )
-    ),
-  };
-}
-
-function scoreQrSharpness(canvas) {
-  const ctx =
-    qrSharpnessCanvas.getContext(
-      '2d',
-      { willReadFrequently: true }
-    );
-
-  ctx.drawImage(
-    canvas,
-    0,
-    0,
-    qrSharpnessCanvas.width,
-    qrSharpnessCanvas.height
-  );
-
-  const data = ctx.getImageData(
-    0,
-    0,
-    qrSharpnessCanvas.width,
-    qrSharpnessCanvas.height
-  ).data;
-
-  const width = qrSharpnessCanvas.width;
-  const height = qrSharpnessCanvas.height;
-  const gray = new Uint8Array(width * height);
-
-  for (
-    let p = 0, i = 0;
-    p < gray.length;
-    p++, i += 4
-  ) {
-    gray[p] = Math.round(
-      data[i] * 0.299 +
-      data[i + 1] * 0.587 +
-      data[i + 2] * 0.114
-    );
-  }
-
-  let score = 0;
-  let count = 0;
-
-  for (
-    let y = 1;
-    y < height - 1;
-    y += 2
-  ) {
-    const row = y * width;
-
-    for (
-      let x = 1;
-      x < width - 1;
-      x += 2
-    ) {
-      const p = row + x;
-      const gx =
-        gray[p + 1] -
-        gray[p - 1];
-      const gy =
-        gray[p + width] -
-        gray[p - width];
-
-      score +=
-        gx * gx +
-        gy * gy;
-
-      count += 1;
-    }
-  }
-
-  return count
-    ? score / count
-    : 0;
-}
-
-function rememberQrCandidate() {
-  const rect =
-    getQrSourceRect(0.90);
-
-  const targetLongSide = 1100;
-  const scale = Math.min(
-    1,
-    targetLongSide /
-      Math.max(
-        rect.width,
-        rect.height
-      )
-  );
-
-  const width = Math.max(
-    1,
-    Math.round(
-      rect.width * scale
-    )
-  );
-
-  const height = Math.max(
-    1,
-    Math.round(
-      rect.height * scale
-    )
-  );
-
-  const canvas =
-    qrFrameCanvases[
-      qrFrameCursor
-    ];
-
-  canvas.width = width;
-  canvas.height = height;
-
-  const ctx = canvas.getContext(
-    '2d',
-    { willReadFrequently: true }
-  );
+  const ctx = els.captureCanvas.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
 
   ctx.drawImage(
     els.video,
@@ -1337,763 +968,6 @@ function rememberQrCandidate() {
     rect.y,
     rect.width,
     rect.height,
-    0,
-    0,
-    width,
-    height
-  );
-
-  qrFrameScores[
-    qrFrameCursor
-  ] = scoreQrSharpness(canvas);
-
-  qrFrameCursor =
-    (qrFrameCursor + 1) %
-    qrFrameCanvases.length;
-
-  qrFrameCount = Math.min(
-    qrFrameCount + 1,
-    qrFrameCanvases.length
-  );
-}
-
-function getBestQrCandidate() {
-  if (!qrFrameCount) {
-    return null;
-  }
-
-  let bestIndex = 0;
-  let bestScore = -Infinity;
-
-  for (
-    let i = 0;
-    i < qrFrameCount;
-    i++
-  ) {
-    if (
-      qrFrameScores[i] >
-      bestScore
-    ) {
-      bestScore =
-        qrFrameScores[i];
-      bestIndex = i;
-    }
-  }
-
-  return qrFrameCanvases[
-    bestIndex
-  ];
-}
-
-function buildLocalContrastQrCanvas(
-  sourceCanvas
-) {
-  const maxLongSide = 1150;
-  const scale = Math.min(
-    1,
-    maxLongSide /
-      Math.max(
-        sourceCanvas.width,
-        sourceCanvas.height
-      )
-  );
-
-  const width = Math.max(
-    1,
-    Math.round(
-      sourceCanvas.width * scale
-    )
-  );
-
-  const height = Math.max(
-    1,
-    Math.round(
-      sourceCanvas.height * scale
-    )
-  );
-
-  qrEnhancedCanvas.width = width;
-  qrEnhancedCanvas.height = height;
-
-  const ctx =
-    qrEnhancedCanvas.getContext(
-      '2d',
-      { willReadFrequently: true }
-    );
-
-  ctx.drawImage(
-    sourceCanvas,
-    0,
-    0,
-    width,
-    height
-  );
-
-  const image = ctx.getImageData(
-    0,
-    0,
-    width,
-    height
-  );
-
-  const gray =
-    new Uint8Array(
-      width * height
-    );
-
-  for (
-    let p = 0, i = 0;
-    p < gray.length;
-    p++, i += 4
-  ) {
-    gray[p] = Math.round(
-      image.data[i] * 0.299 +
-      image.data[i + 1] * 0.587 +
-      image.data[i + 2] * 0.114
-    );
-  }
-
-  const integralWidth =
-    width + 1;
-
-  const integral =
-    new Uint32Array(
-      (width + 1) *
-      (height + 1)
-    );
-
-  for (
-    let y = 1;
-    y <= height;
-    y++
-  ) {
-    let rowSum = 0;
-
-    for (
-      let x = 1;
-      x <= width;
-      x++
-    ) {
-      rowSum +=
-        gray[
-          (y - 1) *
-          width +
-          (x - 1)
-        ];
-
-      integral[
-        y *
-        integralWidth +
-        x
-      ] =
-        integral[
-          (y - 1) *
-          integralWidth +
-          x
-        ] +
-        rowSum;
-    }
-  }
-
-  const radius = Math.max(
-    18,
-    Math.round(
-      Math.min(
-        width,
-        height
-      ) * 0.045
-    )
-  );
-
-  const gain = 3.2;
-
-  for (
-    let y = 0;
-    y < height;
-    y++
-  ) {
-    const y0 = Math.max(
-      0,
-      y - radius
-    );
-
-    const y1 = Math.min(
-      height - 1,
-      y + radius
-    );
-
-    for (
-      let x = 0;
-      x < width;
-      x++
-    ) {
-      const x0 = Math.max(
-        0,
-        x - radius
-      );
-
-      const x1 = Math.min(
-        width - 1,
-        x + radius
-      );
-
-      const A =
-        integral[
-          y0 *
-          integralWidth +
-          x0
-        ];
-
-      const B =
-        integral[
-          y0 *
-          integralWidth +
-          x1 + 1
-        ];
-
-      const C =
-        integral[
-          (y1 + 1) *
-          integralWidth +
-          x0
-        ];
-
-      const D =
-        integral[
-          (y1 + 1) *
-          integralWidth +
-          x1 + 1
-        ];
-
-      const area =
-        (x1 - x0 + 1) *
-        (y1 - y0 + 1);
-
-      const localMean =
-        (D - B - C + A) /
-        area;
-
-      const source =
-        gray[
-          y * width + x
-        ];
-
-      const enhanced =
-        Math.max(
-          0,
-          Math.min(
-            255,
-            128 +
-            (source - localMean) *
-            gain
-          )
-        );
-
-      const i =
-        (y * width + x) * 4;
-
-      image.data[i] = enhanced;
-      image.data[i + 1] = enhanced;
-      image.data[i + 2] = enhanced;
-      image.data[i + 3] = 255;
-    }
-  }
-
-  ctx.putImageData(
-    image,
-    0,
-    0
-  );
-
-  return qrEnhancedCanvas;
-}
-
-function scanCanvasWithJsQr(
-  canvas
-) {
-  if (!window.jsQR) {
-    return null;
-  }
-
-  const ctx = canvas.getContext(
-    '2d',
-    { willReadFrequently: true }
-  );
-
-  const imageData =
-    ctx.getImageData(
-      0,
-      0,
-      canvas.width,
-      canvas.height
-    );
-
-  const code = window.jsQR(
-    imageData.data,
-    canvas.width,
-    canvas.height,
-    {
-      inversionAttempts:
-        'attemptBoth'
-    }
-  );
-
-  return code?.data || null;
-}
-
-async function scanCanvasWithQrScanner(
-  canvas
-) {
-  if (!window.QrScanner) {
-    return null;
-  }
-
-  const engine =
-    await ensureQrEngine();
-
-  if (!engine) {
-    return null;
-  }
-
-  try {
-    const result =
-      await window.QrScanner.scanImage(
-        canvas,
-        {
-          qrEngine: engine,
-          canvas: qrCanvas,
-          alsoTryWithoutScanRegion:
-            true,
-          returnDetailedScanResult:
-            true,
-        }
-      );
-
-    return result?.data || null;
-  } catch (err) {
-    return null;
-  }
-}
-
-async function scanCanvasWithZxing(
-  canvas
-) {
-  const api =
-    await ensureZxingFallback();
-
-  if (!api?.readBarcodes) {
-    return null;
-  }
-
-  const ctx = canvas.getContext(
-    '2d',
-    { willReadFrequently: true }
-  );
-
-  const imageData =
-    ctx.getImageData(
-      0,
-      0,
-      canvas.width,
-      canvas.height
-    );
-
-  try {
-    const results =
-      await api.readBarcodes(
-        imageData,
-        {
-          formats: ['QRCode'],
-          tryHarder: true,
-          maxNumberOfSymbols: 1,
-        }
-      );
-
-    return (
-      results?.[0]?.text ||
-      results?.[0]?.data ||
-      null
-    );
-  } catch (err) {
-    console.debug(
-      'ZXing difficult-QR pass failed',
-      err
-    );
-
-    return null;
-  }
-}
-
-async function scanBestQrRescue() {
-  const best =
-    getBestQrCandidate();
-
-  if (!best) {
-    return null;
-  }
-
-  let decoded =
-    await scanCanvasWithQrScanner(
-      best
-    );
-
-  if (decoded) {
-    return decoded;
-  }
-
-  const enhanced =
-    buildLocalContrastQrCanvas(
-      best
-    );
-
-  decoded =
-    await scanCanvasWithQrScanner(
-      enhanced
-    );
-
-  if (decoded) {
-    return decoded;
-  }
-
-  decoded =
-    scanCanvasWithJsQr(
-      enhanced
-    );
-
-  if (decoded) {
-    return decoded;
-  }
-
-  if (
-    qrMissCount >= 8 &&
-    qrMissCount % 6 === 2
-  ) {
-    decoded =
-      await scanCanvasWithZxing(
-        enhanced
-      );
-
-    if (decoded) {
-      return decoded;
-    }
-  }
-
-  return null;
-}
-
-async function scanQrFrame() {
-  if (
-    !loggingActive ||
-    !isQrMode() ||
-    !stream ||
-    qrScanBusy ||
-    !els.video.videoWidth
-  ) {
-    return;
-  }
-
-  qrScanBusy = true;
-
-  try {
-    let decoded = null;
-    const detailPass =
-      qrMissCount > 0 &&
-      qrMissCount % 3 === 0;
-
-    const widePass =
-      qrMissCount > 0 &&
-      qrMissCount % 8 === 0;
-
-    if (window.QrScanner) {
-      const engine =
-        await ensureQrEngine();
-
-      if (engine) {
-        try {
-          const result =
-            await window.QrScanner.scanImage(
-              els.video,
-              {
-                scanRegion:
-                  getQrScanRegion(
-                    detailPass
-                  ),
-                qrEngine: engine,
-                canvas: qrCanvas,
-                alsoTryWithoutScanRegion:
-                  widePass,
-                returnDetailedScanResult:
-                  true,
-              }
-            );
-
-          decoded =
-            result?.data || null;
-        } catch (err) {
-          // Missing QR is expected during continuous scanning.
-        }
-      }
-    }
-
-    if (!decoded) {
-      rememberQrCandidate();
-
-      if (
-        qrFrameCount >= 3 &&
-        qrMissCount % 3 === 2
-      ) {
-        decoded =
-          await scanBestQrRescue();
-      }
-    }
-
-    if (
-      !decoded &&
-      !window.QrScanner &&
-      window.jsQR
-    ) {
-      decoded =
-        scanCanvasWithJsQr(
-          getBestQrCandidate() ||
-          qrFallbackCanvas
-        );
-    }
-
-    if (!decoded) {
-      qrMissCount += 1;
-      lastQrDetected = '';
-      return;
-    }
-
-    qrMissCount = 0;
-    registerQrValue(decoded);
-  } catch (err) {
-    console.error(
-      'QR scan error',
-      err
-    );
-
-    setStatus('QR読取エラー');
-  } finally {
-    qrScanBusy = false;
-  }
-}
-
-function stopQrFrameLoop() {
-  if (
-    qrLoopHandle === null
-  ) {
-    return;
-  }
-
-  if (
-    qrLoopUsesVideoCallback &&
-    typeof els.video
-      .cancelVideoFrameCallback ===
-      'function'
-  ) {
-    els.video.cancelVideoFrameCallback(
-      qrLoopHandle
-    );
-  } else {
-    cancelAnimationFrame(
-      qrLoopHandle
-    );
-  }
-
-  qrLoopHandle = null;
-}
-
-function scheduleQrFrameLoop() {
-  if (
-    !loggingActive ||
-    !isQrMode() ||
-    !stream
-  ) {
-    return;
-  }
-
-  const callback = now => {
-    qrLoopHandle = null;
-
-    if (
-      loggingActive &&
-      isQrMode() &&
-      stream
-    ) {
-      if (
-        now -
-        qrLastScanAt >= 45
-      ) {
-        qrLastScanAt = now;
-
-        void scanQrFrame();
-      }
-
-      scheduleQrFrameLoop();
-    }
-  };
-
-  if (
-    typeof els.video
-      .requestVideoFrameCallback ===
-      'function'
-  ) {
-    qrLoopUsesVideoCallback =
-      true;
-
-    qrLoopHandle =
-      els.video
-        .requestVideoFrameCallback(
-          callback
-        );
-  } else {
-    qrLoopUsesVideoCallback =
-      false;
-
-    qrLoopHandle =
-      requestAnimationFrame(
-        callback
-      );
-  }
-}
-
-async function startQrReading() {
-  if (
-    loggingActive ||
-    !stream
-  ) {
-    return;
-  }
-
-  if (
-    !window.QrScanner &&
-    !window.jsQR &&
-    !window.ZXingWASM
-  ) {
-    setStatus(
-      'QRライブラリ読込失敗'
-    );
-
-    return;
-  }
-
-  initSuccessAudio();
-
-  loggingActive = true;
-  setSettingsLocked(true);
-  closeSettings();
-
-  lastQrDetected = '';
-  qrMissCount = 0;
-  qrLastScanAt = 0;
-  qrFrameCursor = 0;
-  qrFrameCount = 0;
-  qrFrameScores.fill(0);
-
-  setStatus('QR連続読取中');
-  updatePrimaryButtons();
-
-  void ensureQrEngine();
-  scheduleQrFrameLoop();
-}
-
-async function ensureWorker() {
-  if (worker) return worker;
-
-  setStatus('OCR初期化中');
-
-  worker = await Tesseract.createWorker('eng', 1, {
-    logger: message => {
-      if (typeof message.progress === 'number') {
-        els.ocrProgress.value = message.progress;
-      }
-
-      if (message.status) {
-        els.ocrText.textContent = `OCR: ${message.status}`;
-      }
-    }
-  });
-
-  await worker.setParameters({
-    tessedit_char_whitelist: '0123456789.',
-    tessedit_pageseg_mode: '8',
-    preserve_interword_spaces: '0',
-    classify_bln_numeric_mode: '1',
-    user_defined_dpi: '300'
-  });
-
-  els.ocrProgress.value = 0;
-  return worker;
-}
-
-function getRoiSourceRect() {
-  const v = els.video;
-  const vw = v.videoWidth;
-  const vh = v.videoHeight;
-
-  if (!vw || !vh) {
-    throw new Error('video not ready');
-  }
-
-  const wrap = els.cameraWrap.getBoundingClientRect();
-  const shownAspect = wrap.width / wrap.height;
-  const videoAspect = vw / vh;
-
-  let visibleX = 0;
-  let visibleY = 0;
-  let visibleW = vw;
-  let visibleH = vh;
-
-  if (videoAspect > shownAspect) {
-    visibleW = vh * shownAspect;
-    visibleX = (vw - visibleW) / 2;
-  } else {
-    visibleH = vw / shownAspect;
-    visibleY = (vh - visibleH) / 2;
-  }
-
-  const rw = Number(els.roiW.value) / 100;
-  const rh = Number(els.roiH.value) / 100;
-  const rx = Number(els.roiX.value) / 100;
-  const ry = Number(els.roiY.value) / 100;
-
-  const left = Math.max(0, Math.min(1 - rw, rx - rw / 2));
-  const top = Math.max(0, Math.min(1 - rh, ry - rh / 2));
-
-  return {
-    sx: visibleX + visibleW * left,
-    sy: visibleY + visibleH * top,
-    sw: visibleW * rw,
-    sh: visibleH * rh,
-  };
-}
-
-function captureRoi() {
-  const rect = getRoiSourceRect();
-  const outW = 1100;
-  const outH = Math.max(
-    220,
-    Math.round(outW * rect.sh / rect.sw)
-  );
-
-  els.captureCanvas.width = outW;
-  els.captureCanvas.height = outH;
-
-  const ctx = els.captureCanvas.getContext(
-    '2d',
-    { willReadFrequently: true }
-  );
-
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-
-  ctx.drawImage(
-    els.video,
-    rect.sx,
-    rect.sy,
-    rect.sw,
-    rect.sh,
     0,
     0,
     outW,
@@ -2104,53 +978,33 @@ function captureRoi() {
 }
 
 function captureFingerprint() {
-  const rect = getRoiSourceRect();
-
-  const ctx = changeCanvas.getContext(
-    '2d',
-    { willReadFrequently: true }
-  );
+  const rect = getNumericRoiRect();
+  const ctx = changeCanvas.getContext('2d', { willReadFrequently: true });
 
   ctx.drawImage(
     els.video,
-    rect.sx,
-    rect.sy,
-    rect.sw,
-    rect.sh,
+    rect.x,
+    rect.y,
+    rect.width,
+    rect.height,
     0,
     0,
     changeCanvas.width,
     changeCanvas.height
   );
 
-  const data = ctx.getImageData(
-    0,
-    0,
-    changeCanvas.width,
-    changeCanvas.height
-  ).data;
-
-  const gray = new Float32Array(
-    changeCanvas.width * changeCanvas.height
-  );
-
+  const data = ctx.getImageData(0, 0, changeCanvas.width, changeCanvas.height).data;
+  const gray = new Float32Array(changeCanvas.width * changeCanvas.height);
   let sum = 0;
 
   for (let p = 0, i = 0; p < gray.length; p++, i += 4) {
-    const g =
-      0.299 * data[i] +
-      0.587 * data[i + 1] +
-      0.114 * data[i + 2];
-
-    gray[p] = g;
-    sum += g;
+    const value = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    gray[p] = value;
+    sum += value;
   }
 
   const mean = sum / gray.length;
-
-  for (let i = 0; i < gray.length; i++) {
-    gray[i] -= mean;
-  }
+  for (let i = 0; i < gray.length; i++) gray[i] -= mean;
 
   return gray;
 }
@@ -2159,7 +1013,6 @@ function fingerprintDistance(a, b) {
   if (!a || !b || a.length !== b.length) return 1;
 
   let sum = 0;
-
   for (let i = 0; i < a.length; i++) {
     sum += Math.abs(a[i] - b[i]);
   }
@@ -2168,23 +1021,18 @@ function fingerprintDistance(a, b) {
 }
 
 function changeThresholds() {
-  switch (els.changeSensitivity.value) {
-    case 'high':
-      return { changed: 0.0028, stable: 0.0030 };
-    case 'low':
-      return { changed: 0.0110, stable: 0.0070 };
-    default:
-      return { changed: 0.0055, stable: 0.0045 };
-  }
+  return {
+    changed: 0.0055,
+    stable: 0.0045,
+  };
 }
 
 async function checkDisplayChange() {
   if (
-    !loggingActive ||
-    els.autoTrigger.value !== 'change' ||
+    !readingActive ||
+    isQrMode() ||
     isReading ||
-    changeCheckBusy ||
-    outputIsFull()
+    changeCheckBusy
   ) {
     return;
   }
@@ -2224,12 +1072,8 @@ async function checkDisplayChange() {
       changeBaseline = fp;
       changeCandidate = null;
       changeCandidateCount = 0;
-
-      setStatus('表示変化を検出');
-      await readOnce({ save: true });
+      await readNumberOnce(!testMode);
     }
-  } catch (err) {
-    console.error('change detection error', err);
   } finally {
     changeCheckBusy = false;
   }
@@ -2238,12 +1082,8 @@ async function checkDisplayChange() {
 function buildAdaptiveBinary(srcCanvas) {
   const w = srcCanvas.width;
   const h = srcCanvas.height;
-  const sctx = srcCanvas.getContext(
-    '2d',
-    { willReadFrequently: true }
-  );
-
-  const src = sctx.getImageData(0, 0, w, h);
+  const ctx = srcCanvas.getContext('2d', { willReadFrequently: true });
+  const src = ctx.getImageData(0, 0, w, h);
   const gray = new Uint8Array(w * h);
 
   for (let p = 0, i = 0; p < gray.length; p++, i += 4) {
@@ -2259,22 +1099,14 @@ function buildAdaptiveBinary(srcCanvas) {
 
   for (let y = 1; y <= h; y++) {
     let rowSum = 0;
-
     for (let x = 1; x <= w; x++) {
       rowSum += gray[(y - 1) * w + (x - 1)];
-      integral[y * iw + x] =
-        integral[(y - 1) * iw + x] + rowSum;
+      integral[y * iw + x] = integral[(y - 1) * iw + x] + rowSum;
     }
   }
 
   const out = new Uint8ClampedArray(w * h * 4);
-  const binary = new Uint8Array(w * h);
-  const radius = Math.max(
-    14,
-    Math.round(Math.min(w, h) * 0.06)
-  );
-
-  const offset = 9;
+  const radius = Math.max(14, Math.round(Math.min(w, h) * 0.06));
 
   for (let y = 0; y < h; y++) {
     const y0 = Math.max(0, y - radius);
@@ -2285,1105 +1117,964 @@ function buildAdaptiveBinary(srcCanvas) {
       const x1 = Math.min(w - 1, x + radius);
 
       const A = integral[y0 * iw + x0];
-      const B = integral[y0 * iw + (x1 + 1)];
+      const B = integral[y0 * iw + x1 + 1];
       const C = integral[(y1 + 1) * iw + x0];
-      const D = integral[(y1 + 1) * iw + (x1 + 1)];
+      const D = integral[(y1 + 1) * iw + x1 + 1];
 
-      const area =
-        (x1 - x0 + 1) *
-        (y1 - y0 + 1);
+      const area = (x1 - x0 + 1) * (y1 - y0 + 1);
+      const mean = (D - B - C + A) / area;
+      const ink = gray[y * w + x] < mean - 9;
+      const value = ink ? 0 : 255;
+      const i = (y * w + x) * 4;
 
-      const mean =
-        (D - B - C + A) / area;
-
-      const isInk =
-        gray[y * w + x] < mean - offset;
-
-      binary[y * w + x] = isInk ? 1 : 0;
-
-      const oi = (y * w + x) * 4;
-      const value = isInk ? 0 : 255;
-
-      out[oi] = value;
-      out[oi + 1] = value;
-      out[oi + 2] = value;
-      out[oi + 3] = 255;
+      out[i] = value;
+      out[i + 1] = value;
+      out[i + 2] = value;
+      out[i + 3] = 255;
     }
   }
 
-  return { w, h, out, binary };
-}
-
-function findDecimalAndDigitGroups(binary, w, h) {
-  const columnCounts = new Uint16Array(w);
-  const yTop = Math.floor(h * 0.08);
-  const yBottom = Math.floor(h * 0.92);
-
-  for (let y = yTop; y < yBottom; y++) {
-    const row = y * w;
-
-    for (let x = 0; x < w; x++) {
-      if (binary[row + x]) {
-        columnCounts[x] += 1;
-      }
-    }
-  }
-
-  const minDigitInk = Math.max(
-    5,
-    Math.floor((yBottom - yTop) * 0.08)
-  );
-
-  const rawGroups = [];
-  let start = -1;
-
-  for (let x = 0; x <= w; x++) {
-    const active =
-      x < w &&
-      columnCounts[x] >= minDigitInk;
-
-    if (active && start < 0) {
-      start = x;
-    }
-
-    if (!active && start >= 0) {
-      rawGroups.push([start, x - 1]);
-      start = -1;
-    }
-  }
-
-  const gapJoin = Math.max(
-    6,
-    Math.floor(h * 0.035)
-  );
-
-  const merged = [];
-
-  for (const group of rawGroups) {
-    const prev = merged[merged.length - 1];
-
-    if (
-      prev &&
-      group[0] - prev[1] <= gapJoin
-    ) {
-      prev[1] = group[1];
-    } else {
-      merged.push([...group]);
-    }
-  }
-
-  const digitGroups = merged.filter(
-    group =>
-      (group[1] - group[0] + 1) >=
-      Math.max(8, h * 0.035)
-  );
-
-  const visited = new Uint8Array(w * h);
-  const candidates = [];
-  const y0 = Math.floor(h * 0.52);
-
-  for (let y = y0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const idx = y * w + x;
-
-      if (!binary[idx] || visited[idx]) {
-        continue;
-      }
-
-      const stack = [idx];
-      visited[idx] = 1;
-
-      let area = 0;
-      let minX = x;
-      let maxX = x;
-      let minY = y;
-      let maxY = y;
-
-      while (stack.length) {
-        const cur = stack.pop();
-        const cy = Math.floor(cur / w);
-        const cx = cur - cy * w;
-
-        area += 1;
-        minX = Math.min(minX, cx);
-        maxX = Math.max(maxX, cx);
-        minY = Math.min(minY, cy);
-        maxY = Math.max(maxY, cy);
-
-        const neighbors = [
-          cur - 1,
-          cur + 1,
-          cur - w,
-          cur + w
-        ];
-
-        for (const n of neighbors) {
-          if (
-            n < 0 ||
-            n >= w * h ||
-            visited[n] ||
-            !binary[n]
-          ) {
-            continue;
-          }
-
-          const ny = Math.floor(n / w);
-          const nx = n - ny * w;
-
-          if (
-            Math.abs(nx - cx) +
-            Math.abs(ny - cy) !== 1
-          ) {
-            continue;
-          }
-
-          visited[n] = 1;
-          stack.push(n);
-        }
-      }
-
-      const bw = maxX - minX + 1;
-      const bh = maxY - minY + 1;
-      const density = area / (bw * bh);
-      const relH = bh / h;
-      const relW = bw / w;
-
-      if (
-        area >= Math.max(15, w * h * 0.00008) &&
-        relH >= 0.025 &&
-        relH <= 0.18 &&
-        relW >= 0.008 &&
-        relW <= 0.10 &&
-        density >= 0.25 &&
-        maxY / h >= 0.60
-      ) {
-        candidates.push({
-          x: (minX + maxX) / 2,
-          y: (minY + maxY) / 2,
-          area,
-          density
-        });
-      }
-    }
-  }
-
-  candidates.sort(
-    (a, b) =>
-      (b.area * b.density) -
-      (a.area * a.density)
-  );
-
-  const decimal = candidates.find(
-    candidate =>
-      candidate.x > w * 0.08 &&
-      candidate.x < w * 0.92
-  ) || null;
-
-  return { decimal, digitGroups };
+  return { w, h, out };
 }
 
 function renderOcrCanvas(pre) {
-  const pad = Math.round(
-    Math.max(30, pre.h * 0.12)
-  );
+  const pad = Math.round(Math.max(30, pre.h * 0.12));
 
-  els.ocrCanvas.width =
-    pre.w + pad * 2;
+  els.ocrCanvas.width = pre.w + pad * 2;
+  els.ocrCanvas.height = pre.h + pad * 2;
 
-  els.ocrCanvas.height =
-    pre.h + pad * 2;
-
-  const ctx = els.ocrCanvas.getContext(
-    '2d',
-    { willReadFrequently: true }
-  );
-
+  const ctx = els.ocrCanvas.getContext('2d', { willReadFrequently: true });
   ctx.fillStyle = '#fff';
-  ctx.fillRect(
-    0,
-    0,
-    els.ocrCanvas.width,
-    els.ocrCanvas.height
-  );
+  ctx.fillRect(0, 0, els.ocrCanvas.width, els.ocrCanvas.height);
+  ctx.putImageData(new ImageData(pre.out, pre.w, pre.h), pad, pad);
 
-  ctx.putImageData(
-    new ImageData(
-      pre.out,
-      pre.w,
-      pre.h
-    ),
-    pad,
-    pad
-  );
-
-  els.debugCanvas.width =
-    els.ocrCanvas.width;
-
-  els.debugCanvas.height =
-    els.ocrCanvas.height;
-
-  els.debugCanvas
-    .getContext('2d')
-    .drawImage(
-      els.ocrCanvas,
-      0,
-      0
-    );
+  els.debugCanvas.width = els.ocrCanvas.width;
+  els.debugCanvas.height = els.ocrCanvas.height;
+  els.debugCanvas.getContext('2d').drawImage(els.ocrCanvas, 0, 0);
 
   return els.ocrCanvas;
 }
 
-function normalizeText(text) {
-  return String(text || '')
-    .replace(/,/g, '.')
+async function ensureWorker() {
+  if (worker) return worker;
+
+  setStatus('OCR初期化中');
+
+  worker = await Tesseract.createWorker('eng', 1, {
+    logger: message => {
+      if (typeof message.progress === 'number') {
+        els.ocrProgress.value = message.progress;
+      }
+      if (message.status) {
+        els.ocrText.textContent = `OCR: ${message.status}`;
+      }
+    },
+  });
+
+  await worker.setParameters({
+    tessedit_char_whitelist: '0123456789.',
+    tessedit_pageseg_mode: '8',
+    preserve_interword_spaces: '0',
+    classify_bln_numeric_mode: '1',
+    user_defined_dpi: '300',
+  });
+
+  return worker;
+}
+
+function normalizeNumberFromOcr(raw) {
+  const settings = getSettings();
+  const digits = String(raw || '')
     .replace(/[Oo]/g, '0')
-    .replace(/[^0-9.]/g, '')
-    .replace(/\.{2,}/g, '.');
-}
+    .replace(/[^0-9]/g, '');
 
-function parseValue(text) {
-  let cleaned = normalizeText(text);
+  if (!digits) return null;
 
-  if (!cleaned) return null;
-
-  const firstDot = cleaned.indexOf('.');
-
-  if (firstDot >= 0) {
-    cleaned =
-      cleaned.slice(0, firstDot + 1) +
-      cleaned
-        .slice(firstDot + 1)
-        .replace(/\./g, '');
+  if (settings.numberMode === 'integer') {
+    return String(Number(digits));
   }
 
-  if (
-    !/^\d{1,6}(\.\d{1,3})?$/
-      .test(cleaned)
-  ) {
-    return null;
-  }
-
-  const value = Number(cleaned);
-
-  if (
-    !Number.isFinite(value) ||
-    value < 0 ||
-    value > 999999
-  ) {
-    return null;
-  }
-
-  return {
-    value,
-    normalized: cleaned
-  };
-}
-
-function formatFixedDecimals(digits, places) {
-  const safeDigits =
-    digits.replace(/\D/g, '');
-
-  if (!safeDigits) return null;
-
-  if (places === 0) {
-    return String(Number(safeDigits));
-  }
-
-  const padded =
-    safeDigits.padStart(
-      places + 1,
-      '0'
-    );
-
-  const splitAt =
-    padded.length - places;
-
-  const whole =
-    padded
-      .slice(0, splitAt)
-      .replace(/^0+(?=\d)/, '') || '0';
+  const places = settings.decimalDigits;
+  const padded = digits.padStart(places + 1, '0');
+  const splitAt = padded.length - places;
+  const whole = padded.slice(0, splitAt).replace(/^0+(?=\d)/, '') || '0';
 
   return `${whole}.${padded.slice(splitAt)}`;
 }
 
-function applyDecimalPolicy(parsed, rawText, decimalInfo) {
-  const policy = els.decimalPlaces.value;
-  const rawDigits =
-    normalizeText(rawText)
-      .replace(/\D/g, '');
-
-  const parsedDigits =
-    parsed?.normalized
-      ?.replace(/\D/g, '') || '';
-
-  const digits =
-    rawDigits || parsedDigits;
-
-  if (policy !== 'auto') {
-    const places = Number(policy);
-    const normalized =
-      formatFixedDecimals(digits, places);
-
-    if (!normalized) return null;
-
-    const value = Number(normalized);
-
-    if (!Number.isFinite(value)) {
-      return null;
-    }
-
-    return {
-      value,
-      normalized,
-      decimalFixed: true
-    };
-  }
-
-  if (
-    parsed?.normalized
-      ?.includes('.')
-  ) {
-    return parsed;
-  }
-
-  if (
-    !decimalInfo?.decimal ||
-    !digits ||
-    digits.length < 2
-  ) {
-    return parsed;
-  }
-
-  const groups =
-    decimalInfo.digitGroups;
-
-  const dotX =
-    decimalInfo.decimal.x;
-
-  let insertAt = -1;
-
-  if (
-    groups.length ===
-    digits.length
-  ) {
-    const centers =
-      groups.map(
-        group =>
-          (group[0] +
-           group[1]) / 2
-      );
-
-    insertAt =
-      centers.filter(
-        x => x < dotX
-      ).length;
-  }
-
-  if (
-    insertAt <= 0 ||
-    insertAt >=
-      digits.length
-  ) {
-    return parsed;
-  }
-
-  const recovered =
-    `${digits.slice(0, insertAt)}.${digits.slice(insertAt)}`;
-
-  return {
-    value: Number(recovered),
-    normalized: recovered,
-    decimalRecovered: true
-  };
-}
-
-async function recognizeCanvas(canvas, decimalInfo) {
-  const activeWorker =
-    await ensureWorker();
-
-  const result =
-    await activeWorker.recognize(canvas);
-
-  const raw =
-    result?.data?.text ?? '';
-
-  const confidence =
-    Number(
-      result?.data?.confidence ?? 0
-    );
-
-  let parsed =
-    parseValue(raw);
-
-  parsed =
-    applyDecimalPolicy(
-      parsed,
-      raw,
-      decimalInfo
-    );
-
-  if (!parsed) {
-    const digitsOnly =
-      normalizeText(raw)
-        .replace(/\D/g, '');
-
-    if (
-      /^\d{1,7}$/
-        .test(digitsOnly)
-    ) {
-      parsed =
-        applyDecimalPolicy(
-          {
-            value:
-              Number(digitsOnly),
-            normalized:
-              digitsOnly
-          },
-          raw,
-          decimalInfo
-        );
-    }
-  }
-
-  return {
-    raw,
-    confidence,
-    parsed
-  };
-}
-
-async function readOnce({ save = true } = {}) {
-  if (
-    isReading ||
-    outputIsFull()
-  ) {
-    return;
-  }
+async function readNumberOnce(save) {
+  if (isReading || !stream) return;
 
   isReading = true;
-  updatePrimaryButtons();
+  updatePrimaryUi();
 
   try {
-    setStatus('読み取り中');
+    setStatus(testMode ? 'テスト読み取り中' : '読み取り中');
 
-    const src =
-      captureRoi();
+    const src = captureNumericRoi();
+    const pre = buildAdaptiveBinary(src);
+    const canvas = renderOcrCanvas(pre);
 
-    const pre =
-      buildAdaptiveBinary(src);
+    const activeWorker = await ensureWorker();
+    const result = await activeWorker.recognize(canvas);
 
-    const decimalInfo =
-      findDecimalAndDigitGroups(
-        pre.binary,
-        pre.w,
-        pre.h
-      );
+    const raw = result?.data?.text ?? '';
+    const confidence = Number(result?.data?.confidence ?? 0);
+    const value = normalizeNumberFromOcr(raw);
 
-    const ocrCanvas =
-      renderOcrCanvas(pre);
+    els.ocrText.textContent = `OCR原文: ${JSON.stringify(raw.trim())}`;
+    els.ocrMiniText.textContent = value || 'ERROR';
 
-    const result =
-      await recognizeCanvas(
-        ocrCanvas,
-        decimalInfo
-      );
+    if (!value) {
+      setStatus(testMode ? 'テスト: OCR_ERROR' : 'OCR_ERROR');
+      return;
+    }
 
-    const timestamp =
-      nowIsoLocal();
-
-    els.confidence.textContent =
-      `${Math.round(result.confidence)}%`;
-
-    const decimalInfoText =
-      result.parsed?.decimalFixed
-        ? ` / 小数${els.decimalPlaces.value}桁固定`
-        : result.parsed?.decimalRecovered
-          ? ' / 小数点補正'
-          : '';
-
-    els.ocrText.textContent =
-      `OCR原文: ${JSON.stringify(result.raw.trim())}${decimalInfoText}`;
-
-    if (result.parsed) {
-      const value =
-        result.parsed.normalized;
-
-      els.currentValue.textContent =
-        value;
-
-      els.ocrMiniText.textContent =
-        value;
-
-      const lowConfidence =
-        result.confidence < 35;
-
-      const resultStatus =
-        lowConfidence
-          ? 'LOW_CONFIDENCE'
-          : 'OK';
-
-      setStatus(
-        loggingActive
-          ? `${resultStatus} / 自動中`
-          : resultStatus
-      );
-
-      if (save) {
-        saveMeasurement(
-          value,
-          timestamp,
-          resultStatus,
-          result.confidence
-        );
-      }
+    if (save) {
+      pushRecord(value, 'number', 'OK', confidence);
     } else {
-      els.ocrMiniText.textContent =
-        'ERROR';
-
-      setStatus(
-        loggingActive
-          ? 'OCR_ERROR / 自動中'
-          : 'OCR_ERROR'
-      );
+      showReadResult(value, 'number', 'TEST', confidence, true);
     }
   } catch (err) {
     console.error(err);
-    els.ocrMiniText.textContent =
-      'ERROR';
-    setStatus('ERROR');
+    setStatus('OCR_ERROR');
   } finally {
     isReading = false;
     els.ocrProgress.value = 0;
-    updatePrimaryButtons();
+    updatePrimaryUi();
   }
 }
 
-async function startAutoReading() {
+async function ensureQrEngine() {
+  if (!window.QrScanner) return null;
+
+  if (!qrEnginePromise) {
+    qrEnginePromise = window.QrScanner
+      .createQrEngine('./vendor/qr-scanner-worker.min.js')
+      .catch(err => {
+        console.warn('QR worker unavailable', err);
+        qrEnginePromise = null;
+        return null;
+      });
+  }
+
+  return qrEnginePromise;
+}
+
+async function ensureZxingFallback() {
+  const api = window.ZXingWASM;
+  if (!api?.readBarcodes) return null;
+
+  if (!zxingReadyPromise) {
+    try {
+      const prep = api.prepareZXingModule?.({
+        overrides: {
+          locateFile(path, prefix) {
+            if (path.endsWith('.wasm')) {
+              return 'https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.4/dist/reader/zxing_reader.wasm';
+            }
+            return prefix + path;
+          },
+        },
+        fireImmediately: true,
+      });
+
+      zxingReadyPromise = Promise.resolve(prep)
+        .then(() => api)
+        .catch(err => {
+          console.warn('ZXing WASM unavailable', err);
+          zxingReadyPromise = null;
+          return null;
+        });
+    } catch (err) {
+      console.warn('ZXing WASM init failed', err);
+      return null;
+    }
+  }
+
+  return zxingReadyPromise;
+}
+
+function initSuccessAudio() {
+  try {
+    if (!successAudioContext) {
+      const AudioContextClass =
+        window.AudioContext || window.webkitAudioContext;
+
+      if (!AudioContextClass) return;
+
+      successAudioContext = new AudioContextClass();
+    }
+
+    if (successAudioContext.state === 'suspended') {
+      void successAudioContext.resume();
+    }
+  } catch (err) {
+    console.debug('success audio unavailable', err);
+  }
+}
+
+function playSuccessCue() {
+  try {
+    initSuccessAudio();
+    const ctx = successAudioContext;
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(190, now);
+    osc.frequency.exponentialRampToValueAtTime(105, now + 0.085);
+
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.12, now + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.095);
+  } catch (err) {
+    console.debug('success sound failed', err);
+  }
+}
+
+function flashQrSuccess() {
+  els.cameraWrap.classList.remove('qr-success');
+  void els.cameraWrap.offsetWidth;
+  els.cameraWrap.classList.add('qr-success');
+}
+
+function getQrSourceRect(fraction = 0.90) {
+  const { visibleX, visibleY, visibleW, visibleH } = getVisibleVideoRect();
+
+  const width = visibleW * fraction;
+  const height = visibleH * fraction;
+
+  return {
+    x: Math.max(0, Math.round(visibleX + (visibleW - width) / 2)),
+    y: Math.max(0, Math.round(visibleY + (visibleH - height) / 2)),
+    width: Math.max(1, Math.round(width)),
+    height: Math.max(1, Math.round(height)),
+  };
+}
+
+function getQrScanRegion(detail = false) {
+  const rect = getQrSourceRect(detail ? 0.92 : 0.82);
+  const targetLongSide = detail ? 1600 : 960;
+  const scale = Math.min(1, targetLongSide / Math.max(rect.width, rect.height));
+
+  return {
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+    downScaledWidth: Math.max(1, Math.round(rect.width * scale)),
+    downScaledHeight: Math.max(1, Math.round(rect.height * scale)),
+  };
+}
+
+function scoreQrSharpness(canvas) {
+  const ctx = qrSharpnessCanvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(canvas, 0, 0, qrSharpnessCanvas.width, qrSharpnessCanvas.height);
+
+  const data = ctx.getImageData(
+    0,
+    0,
+    qrSharpnessCanvas.width,
+    qrSharpnessCanvas.height
+  ).data;
+
+  const width = qrSharpnessCanvas.width;
+  const height = qrSharpnessCanvas.height;
+  const gray = new Uint8Array(width * height);
+
+  for (let p = 0, i = 0; p < gray.length; p++, i += 4) {
+    gray[p] = Math.round(
+      data[i] * 0.299 +
+      data[i + 1] * 0.587 +
+      data[i + 2] * 0.114
+    );
+  }
+
+  let score = 0;
+  let count = 0;
+
+  for (let y = 1; y < height - 1; y += 2) {
+    for (let x = 1; x < width - 1; x += 2) {
+      const p = y * width + x;
+      const gx = gray[p + 1] - gray[p - 1];
+      const gy = gray[p + width] - gray[p - width];
+      score += gx * gx + gy * gy;
+      count += 1;
+    }
+  }
+
+  return count ? score / count : 0;
+}
+
+function rememberQrCandidate() {
+  const rect = getQrSourceRect(0.92);
+  const targetLongSide = 1150;
+  const scale = Math.min(1, targetLongSide / Math.max(rect.width, rect.height));
+  const width = Math.max(1, Math.round(rect.width * scale));
+  const height = Math.max(1, Math.round(rect.height * scale));
+
+  const canvas = qrFrameCanvases[qrFrameCursor];
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(
+    els.video,
+    rect.x,
+    rect.y,
+    rect.width,
+    rect.height,
+    0,
+    0,
+    width,
+    height
+  );
+
+  qrFrameScores[qrFrameCursor] = scoreQrSharpness(canvas);
+  qrFrameCursor = (qrFrameCursor + 1) % qrFrameCanvases.length;
+  qrFrameCount = Math.min(qrFrameCount + 1, qrFrameCanvases.length);
+}
+
+function getBestQrCandidate() {
+  if (!qrFrameCount) return null;
+
+  let bestIndex = 0;
+  let bestScore = -Infinity;
+
+  for (let i = 0; i < qrFrameCount; i++) {
+    if (qrFrameScores[i] > bestScore) {
+      bestScore = qrFrameScores[i];
+      bestIndex = i;
+    }
+  }
+
+  return qrFrameCanvases[bestIndex];
+}
+
+function buildLocalContrastQrCanvas(sourceCanvas) {
+  const maxLongSide = 1150;
+  const scale = Math.min(
+    1,
+    maxLongSide / Math.max(sourceCanvas.width, sourceCanvas.height)
+  );
+
+  const width = Math.max(1, Math.round(sourceCanvas.width * scale));
+  const height = Math.max(1, Math.round(sourceCanvas.height * scale));
+
+  qrEnhancedCanvas.width = width;
+  qrEnhancedCanvas.height = height;
+
+  const ctx = qrEnhancedCanvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(sourceCanvas, 0, 0, width, height);
+
+  const image = ctx.getImageData(0, 0, width, height);
+  const gray = new Uint8Array(width * height);
+
+  for (let p = 0, i = 0; p < gray.length; p++, i += 4) {
+    gray[p] = Math.round(
+      image.data[i] * 0.299 +
+      image.data[i + 1] * 0.587 +
+      image.data[i + 2] * 0.114
+    );
+  }
+
+  const iw = width + 1;
+  const integral = new Uint32Array((width + 1) * (height + 1));
+
+  for (let y = 1; y <= height; y++) {
+    let rowSum = 0;
+
+    for (let x = 1; x <= width; x++) {
+      rowSum += gray[(y - 1) * width + (x - 1)];
+      integral[y * iw + x] = integral[(y - 1) * iw + x] + rowSum;
+    }
+  }
+
+  const radius = Math.max(18, Math.round(Math.min(width, height) * 0.045));
+  const gain = 3.2;
+
+  for (let y = 0; y < height; y++) {
+    const y0 = Math.max(0, y - radius);
+    const y1 = Math.min(height - 1, y + radius);
+
+    for (let x = 0; x < width; x++) {
+      const x0 = Math.max(0, x - radius);
+      const x1 = Math.min(width - 1, x + radius);
+
+      const A = integral[y0 * iw + x0];
+      const B = integral[y0 * iw + x1 + 1];
+      const C = integral[(y1 + 1) * iw + x0];
+      const D = integral[(y1 + 1) * iw + x1 + 1];
+
+      const area = (x1 - x0 + 1) * (y1 - y0 + 1);
+      const localMean = (D - B - C + A) / area;
+      const source = gray[y * width + x];
+      const enhanced = Math.max(
+        0,
+        Math.min(255, 128 + (source - localMean) * gain)
+      );
+
+      const i = (y * width + x) * 4;
+      image.data[i] = enhanced;
+      image.data[i + 1] = enhanced;
+      image.data[i + 2] = enhanced;
+      image.data[i + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(image, 0, 0);
+  return qrEnhancedCanvas;
+}
+
+function scanCanvasWithJsQr(canvas) {
+  if (!window.jsQR) return null;
+
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  const result = window.jsQR(
+    imageData.data,
+    canvas.width,
+    canvas.height,
+    { inversionAttempts: 'attemptBoth' }
+  );
+
+  return result?.data || null;
+}
+
+async function scanCanvasWithQrScanner(canvas) {
+  if (!window.QrScanner) return null;
+
+  const engine = await ensureQrEngine();
+  if (!engine) return null;
+
+  try {
+    const result = await window.QrScanner.scanImage(canvas, {
+      qrEngine: engine,
+      canvas: qrCanvas,
+      alsoTryWithoutScanRegion: true,
+      returnDetailedScanResult: true,
+    });
+
+    return result?.data || null;
+  } catch {
+    return null;
+  }
+}
+
+async function scanCanvasWithZxing(canvas) {
+  const api = await ensureZxingFallback();
+  if (!api?.readBarcodes) return null;
+
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  try {
+    const results = await api.readBarcodes(imageData, {
+      formats: ['QRCode'],
+      tryHarder: true,
+      maxNumberOfSymbols: 1,
+    });
+
+    return results?.[0]?.text || results?.[0]?.data || null;
+  } catch {
+    return null;
+  }
+}
+
+async function scanBestQrRescue(forceZxing = false) {
+  const best = getBestQrCandidate();
+  if (!best) return null;
+
+  let decoded = await scanCanvasWithQrScanner(best);
+  if (decoded) return decoded;
+
+  const enhanced = buildLocalContrastQrCanvas(best);
+
+  decoded = await scanCanvasWithQrScanner(enhanced);
+  if (decoded) return decoded;
+
+  decoded = scanCanvasWithJsQr(enhanced);
+  if (decoded) return decoded;
+
+  if (forceZxing || qrMissCount >= 8) {
+    decoded = await scanCanvasWithZxing(enhanced);
+    if (decoded) return decoded;
+  }
+
+  return null;
+}
+
+async function decodeQrCurrentFrame(forceRescue = false) {
+  if (!stream || !els.video.videoWidth) return null;
+
+  let decoded = null;
+  const detailPass = qrMissCount > 0 && qrMissCount % 3 === 0;
+  const widePass = forceRescue || (qrMissCount > 0 && qrMissCount % 8 === 0);
+
+  if (window.QrScanner) {
+    const engine = await ensureQrEngine();
+
+    if (engine) {
+      try {
+        const result = await window.QrScanner.scanImage(els.video, {
+          scanRegion: getQrScanRegion(detailPass),
+          qrEngine: engine,
+          canvas: qrCanvas,
+          alsoTryWithoutScanRegion: widePass,
+          returnDetailedScanResult: true,
+        });
+
+        decoded = result?.data || null;
+      } catch {
+        // No QR in this frame.
+      }
+    }
+  }
+
+  if (!decoded) {
+    rememberQrCandidate();
+
+    if (
+      forceRescue ||
+      (qrFrameCount >= 3 && qrMissCount % 3 === 2)
+    ) {
+      decoded = await scanBestQrRescue(forceRescue);
+    }
+  }
+
+  if (!decoded && !window.QrScanner) {
+    decoded = scanCanvasWithJsQr(getBestQrCandidate());
+  }
+
+  return decoded;
+}
+
+function handleQrDecoded(value, save) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return false;
+
+  els.currentValue.textContent = normalized;
+  els.confidence.textContent = 'QR';
+
+  if (!save || testMode) {
+    showReadResult(normalized, 'qr', 'TEST', null, true);
+    flashQrSuccess();
+    playSuccessCue();
+    if (navigator.vibrate) navigator.vibrate(45);
+    return true;
+  }
+
+  if (qrSeen.has(normalized)) {
+    setStatus(`登録済み: ${normalized}`);
+    lastQrDetected = normalized;
+    return false;
+  }
+
+  const saved = pushRecord(normalized, 'qr', '登録', null);
+
+  if (saved) {
+    lastQrDetected = normalized;
+    flashQrSuccess();
+    playSuccessCue();
+    if (navigator.vibrate) navigator.vibrate(45);
+  }
+
+  return saved;
+}
+
+async function scanQrOnce(save, forceRescue = true) {
+  if (qrScanBusy || !stream) return;
+
+  qrScanBusy = true;
+
+  try {
+    setStatus(testMode ? 'テストQR読取中' : 'QR読取中');
+
+    const decoded = await decodeQrCurrentFrame(forceRescue);
+
+    if (!decoded) {
+      qrMissCount += 1;
+      lastQrDetected = '';
+      setStatus(testMode ? 'テスト: QR未検出' : 'QR未検出');
+      return;
+    }
+
+    qrMissCount = 0;
+    handleQrDecoded(decoded, save);
+  } finally {
+    qrScanBusy = false;
+  }
+}
+
+async function scanQrFrame() {
   if (
-    loggingActive ||
+    !readingActive ||
+    !isQrMode() ||
     !stream ||
-    outputIsFull()
+    qrScanBusy
   ) {
     return;
   }
 
-  loggingActive = true;
-  setSettingsLocked(true);
-  closeSettings();
-  updatePrimaryButtons();
+  qrScanBusy = true;
 
-  if (
-    els.autoTrigger.value ===
-    'change'
-  ) {
-    changeBaseline =
-      captureFingerprint();
+  try {
+    const decoded = await decodeQrCurrentFrame(false);
 
-    changeCandidate = null;
-    changeCandidateCount = 0;
+    if (!decoded) {
+      qrMissCount += 1;
+      lastQrDetected = '';
+      return;
+    }
 
-    setStatus(
-      '画面変化を監視中'
-    );
+    qrMissCount = 0;
 
-    await readOnce({
-      save: true
-    });
+    if (lastQrDetected === decoded && qrSeen.has(decoded)) {
+      return;
+    }
 
-    if (!loggingActive) return;
-
-    timer = setInterval(
-      checkDisplayChange,
-      120
-    );
-  } else {
-    const sec =
-      Number(
-        els.intervalSec.value
-      );
-
-    setStatus(
-      `${sec}秒間隔で自動読み取り`
-    );
-
-    await readOnce({
-      save: true
-    });
-
-    if (!loggingActive) return;
-
-    timer = setInterval(
-      () =>
-        readOnce({
-          save: true
-        }),
-      sec * 1000
-    );
+    handleQrDecoded(decoded, !testMode);
+  } finally {
+    qrScanBusy = false;
   }
 }
 
-function stopAutoReading(
-  preserveStatus = false
-) {
-  if (timer) {
-    clearInterval(timer);
+function stopQrFrameLoop() {
+  if (qrLoopHandle === null) return;
+
+  if (
+    qrLoopUsesVideoCallback &&
+    typeof els.video.cancelVideoFrameCallback === 'function'
+  ) {
+    els.video.cancelVideoFrameCallback(qrLoopHandle);
+  } else {
+    cancelAnimationFrame(qrLoopHandle);
   }
+
+  qrLoopHandle = null;
+}
+
+function scheduleQrFrameLoop() {
+  if (!readingActive || !isQrMode() || !stream) return;
+
+  const callback = now => {
+    qrLoopHandle = null;
+
+    if (readingActive && isQrMode() && stream) {
+      if (now - qrLastScanAt >= 45) {
+        qrLastScanAt = now;
+        void scanQrFrame();
+      }
+
+      scheduleQrFrameLoop();
+    }
+  };
+
+  if (typeof els.video.requestVideoFrameCallback === 'function') {
+    qrLoopUsesVideoCallback = true;
+    qrLoopHandle = els.video.requestVideoFrameCallback(callback);
+  } else {
+    qrLoopUsesVideoCallback = false;
+    qrLoopHandle = requestAnimationFrame(callback);
+  }
+}
+
+async function startReading() {
+  const settings = getSettings();
+
+  if (
+    readingActive ||
+    !stream ||
+    outputFull()
+  ) {
+    return;
+  }
+
+  initSuccessAudio();
+
+  if (settings.readMode === 'manual') {
+    if (settings.scanTarget === 'qr') {
+      await scanQrOnce(!testMode, true);
+    } else {
+      await readNumberOnce(!testMode);
+    }
+    return;
+  }
+
+  readingActive = true;
+  updatePrimaryUi();
+
+  if (settings.scanTarget === 'qr') {
+    qrMissCount = 0;
+    qrFrameCursor = 0;
+    qrFrameCount = 0;
+    qrFrameScores.fill(0);
+    lastQrDetected = '';
+
+    if (settings.autoTrigger === 'timer') {
+      setStatus(`${settings.timerSeconds}秒間隔でQR読取`);
+      await scanQrOnce(!testMode, true);
+
+      if (readingActive) {
+        timer = setInterval(
+          () => void scanQrOnce(!testMode, true),
+          settings.timerSeconds * 1000
+        );
+      }
+    } else {
+      setStatus('QR連続読取中');
+      scheduleQrFrameLoop();
+    }
+
+    return;
+  }
+
+  if (settings.autoTrigger === 'timer') {
+    setStatus(`${settings.timerSeconds}秒間隔で読み取り`);
+    await readNumberOnce(!testMode);
+
+    if (readingActive) {
+      timer = setInterval(
+        () => void readNumberOnce(!testMode),
+        settings.timerSeconds * 1000
+      );
+    }
+  } else {
+    changeBaseline = captureFingerprint();
+    changeCandidate = null;
+    changeCandidateCount = 0;
+    setStatus('画面変化を監視中');
+
+    await readNumberOnce(!testMode);
+
+    if (readingActive) {
+      timer = setInterval(checkDisplayChange, 120);
+    }
+  }
+}
+
+function stopReading(preserveStatus = false) {
+  if (timer) clearInterval(timer);
 
   timer = null;
   stopQrFrameLoop();
   qrScanBusy = false;
-  loggingActive = false;
+  readingActive = false;
   changeBaseline = null;
   changeCandidate = null;
   changeCandidateCount = 0;
 
-  setSettingsLocked(false);
-
   if (!preserveStatus) {
-    setStatus(
-      isQrMode()
-        ? 'QR連続読取停止'
-        : '自動読み取り停止'
-    );
+    setStatus(testMode ? 'テスト読み取り停止' : '読み取り停止');
   }
 
-  updatePrimaryButtons();
-  updateDerivedUi();
+  updatePrimaryUi();
 }
 
 async function handleReadButton() {
-  if (isQrMode()) {
-    if (loggingActive) {
-      stopAutoReading(false);
-    } else {
-      await startQrReading();
-    }
-    return;
-  }
-
-  if (els.readMode.value === 'manual') {
-    await readOnce({ save: true });
-    return;
-  }
-
-  if (loggingActive) {
-    stopAutoReading(false);
+  if (readingActive) {
+    stopReading(false);
   } else {
-    await startAutoReading();
+    await startReading();
   }
 }
 
 function csvEscape(value) {
-  const s =
-    String(value ?? '');
-
-  return /[",\r\n]/.test(s)
-    ? `"${s.replace(/"/g, '""')}"`
-    : s;
+  const text = String(value ?? '');
+  return /[",\r\n]/.test(text)
+    ? `"${text.replace(/"/g, '""')}"`
+    : text;
 }
 
 function buildCsvText() {
-  if (isQrMode()) {
-    const lines = ['読取日時,管理番号'];
+  const settings = getSettings();
 
-    for (const record of qrRecords) {
-      lines.push(
-        [
-          record.timestamp,
-          record.value
-        ]
-          .map(csvEscape)
-          .join(',')
-      );
-    }
-
-    return '\uFEFF' + lines.join('\r\n');
+  if (settings.outputMode === 'one-line') {
+    return '\uFEFF' + records.map(record => csvEscape(record.value)).join(',');
   }
 
-  const cfg = readConfig();
-
-  if (cfg.mode === 'simple') {
-    return (
-      '\uFEFF' +
-      measurements
-        .map(record =>
-          csvEscape(record.value)
-        )
-        .join(',')
-    );
-  }
-
-  const matrix =
-    buildTableMatrix(cfg);
-
-  const { rows, cols } =
-    computeExportSize(cfg);
-
+  const matrix = buildMatrix();
+  const { rows, cols } = previewSize();
   const lines = [];
 
-  if (
-    cfg.columnHeaderMode !==
-    'none'
-  ) {
-    const header = [];
+  const header = [''];
+  for (let col = 0; col < cols; col++) {
+    header.push(String(col + 1));
+  }
+  lines.push(header.map(csvEscape).join(','));
 
-    if (
-      cfg.rowHeaderMode !==
-      'none'
-    ) {
-      header.push(
-        cfg.cornerHeader || ''
-      );
+  for (let row = 0; row < rows; row++) {
+    const values = [String(row + 1)];
+
+    for (let col = 0; col < cols; col++) {
+      values.push(matrix[row]?.[col] ?? '');
     }
 
-    for (
-      let c = 0;
-      c < cols;
-      c++
-    ) {
-      header.push(
-        getColumnLabel(c, cfg)
-      );
-    }
-
-    lines.push(
-      header
-        .map(csvEscape)
-        .join(',')
-    );
+    lines.push(values.map(csvEscape).join(','));
   }
 
-  for (
-    let r = 0;
-    r < rows;
-    r++
-  ) {
-    const row = [];
-
-    if (
-      cfg.rowHeaderMode !==
-      'none'
-    ) {
-      row.push(
-        getRowLabel(r, cfg)
-      );
-    }
-
-    for (
-      let c = 0;
-      c < cols;
-      c++
-    ) {
-      row.push(
-        matrix[r]?.[c] ?? ''
-      );
-    }
-
-    lines.push(
-      row
-        .map(csvEscape)
-        .join(',')
-    );
-  }
-
-  return (
-    '\uFEFF' +
-    lines.join('\r\n')
-  );
+  return '\uFEFF' + lines.join('\r\n');
 }
 
 function makeCsvFile() {
-  const csv =
-    buildCsvText();
-
+  const csv = buildCsvText();
   const d = new Date();
-  const pad =
-    n =>
-      String(n).padStart(
-        2,
-        '0'
-      );
-
+  const pad = n => String(n).padStart(2, '0');
   const filename =
-    `${isQrMode() ? 'qr-management' : 'swt-log'}-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.csv`;
+    `swt-log-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.csv`;
 
-  const blob =
-    new Blob(
-      [csv],
-      {
-        type:
-          'text/csv;charset=utf-8'
-      }
-    );
+  const blob = new Blob([csv], {
+    type: 'text/csv;charset=utf-8',
+  });
 
-  return {
-    csv,
-    blob,
-    filename
-  };
+  return { blob, filename };
 }
 
 function downloadCsv() {
-  const count = isQrMode()
-    ? qrRecords.length
-    : measurements.length;
+  if (!records.length) return;
 
-  if (!count) return;
-
-  const {
-    blob,
-    filename
-  } = makeCsvFile();
-
-  const url =
-    URL.createObjectURL(blob);
-
-  const a =
-    document.createElement('a');
+  const { blob, filename } = makeCsvFile();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
 
   a.download = filename;
   a.href = url;
-
   document.body.appendChild(a);
   a.click();
   a.remove();
 
-  setTimeout(
-    () =>
-      URL.revokeObjectURL(url),
-    1000
-  );
-
-  setStatus(
-    'CSVを保存しました'
-  );
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setStatus('CSVを保存しました');
 }
 
 async function shareCsv() {
-  const count = isQrMode()
-    ? qrRecords.length
-    : measurements.length;
+  if (!records.length) return;
 
-  if (!count) return;
-
-  const {
-    blob,
-    filename
-  } = makeCsvFile();
+  const { blob, filename } = makeCsvFile();
 
   try {
-    const file =
-      new File(
-        [blob],
-        filename,
-        {
-          type:
-            'text/csv;charset=utf-8'
-        }
-      );
+    const file = new File([blob], filename, {
+      type: 'text/csv;charset=utf-8',
+    });
 
     if (
       navigator.share &&
-      (
-        !navigator.canShare ||
-        navigator.canShare({
-          files: [file]
-        })
-      )
+      (!navigator.canShare || navigator.canShare({ files: [file] }))
     ) {
       await navigator.share({
         files: [file],
-        title: isQrMode()
-          ? 'QR管理番号一覧'
-          : 'SWT測定データ',
-        text: isQrMode()
-          ? 'QR管理番号の読取一覧CSVです。'
-          : 'SWT Loggerで作成したCSVです。'
+        title: '読取データ',
+        text: 'SWT Loggerで作成したCSVです。',
       });
 
       setStatus('共有しました');
       return;
     }
   } catch (err) {
-    if (
-      err?.name ===
-      'AbortError'
-    ) {
-      setStatus(
-        '共有をキャンセル'
-      );
-
+    if (err?.name === 'AbortError') {
+      setStatus('共有をキャンセル');
       return;
     }
-
-    console.error(
-      'share failed',
-      err
-    );
   }
 
   downloadCsv();
 }
 
-const outputControls = [
-  els.outputMode,
-  els.fixedColumns,
-  els.columnCount,
-  els.columnHeaderMode,
-  els.columnHeaders,
-  els.fixedRows,
-  els.rowCount,
-  els.rowHeaderMode,
-  els.rowHeaders,
-  els.cornerHeader,
-];
+function menuSettingsChanged() {
+  updateNestedSettingsUi();
+}
 
-outputControls.forEach(
-  control => {
-    control.addEventListener(
-      'input',
-      updateOutputSettingsUi
-    );
+for (const tab of els.menuTabs) {
+  tab.addEventListener('click', () => {
+    const name = tab.dataset.menu;
+    if (openMenuName === name) {
+      closeMenu();
+    } else {
+      openMenu(name);
+    }
+  });
+}
 
-    control.addEventListener(
-      'change',
-      updateOutputSettingsUi
-    );
-  }
-);
+for (const button of els.closeMenuBtns) {
+  button.addEventListener('click', closeMenu);
+}
 
-els.scanTarget.addEventListener(
-  'change',
-  updateReadSettingsUi
-);
+for (const button of els.saveSettingsBtns) {
+  button.addEventListener('click', () => {
+    const section = button.dataset.save || '設定';
 
-els.readMode.addEventListener(
-  'change',
-  updateReadSettingsUi
-);
+    if (readingActive) stopReading(false);
 
-els.autoTrigger.addEventListener(
-  'change',
-  updateReadSettingsUi
-);
+    saveSettings(section);
 
-els.unit.addEventListener(
-  'change',
-  () => {
-    els.currentUnit.textContent =
-      els.unit.value;
-  }
-);
+    if (section === 'output' && !testMode) {
+      reflowRecordsForOutput();
+    } else {
+      updateDerivedUi();
+    }
+  });
+}
 
-[
+for (const input of document.querySelectorAll(
+  'input[name="scanTarget"], input[name="numberMode"], input[name="readMode"], input[name="autoTrigger"], input[name="outputMode"]'
+)) {
+  input.addEventListener('change', menuSettingsChanged);
+}
+
+for (const input of [
+  els.decimalDigits,
   els.roiX,
   els.roiY,
   els.roiW,
-  els.roiH
-].forEach(control => {
-  control.addEventListener(
-    'input',
-    updateRoi
-  );
+  els.roiH,
+  els.timerSeconds,
+  els.useColumns,
+  els.columnCount,
+  els.useRows,
+  els.rowCount,
+  els.allowGaps,
+]) {
+  input.addEventListener('input', menuSettingsChanged);
+  input.addEventListener('change', menuSettingsChanged);
+}
+
+els.cameraBtn.addEventListener('click', toggleCamera);
+els.readBtn.addEventListener('click', handleReadButton);
+els.testModeBtn.addEventListener('click', () => setTestMode(!testMode));
+els.blankBtn.addEventListener('click', insertBlank);
+els.nextRowBtn.addEventListener('click', moveNextRow);
+els.undoBtn.addEventListener('click', undoLast);
+els.shareBtn.addEventListener('click', shareCsv);
+els.saveBtn.addEventListener('click', downloadCsv);
+
+window.addEventListener('beforeunload', () => {
+  stopReading(true);
+
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+  }
+
+  if (worker) worker.terminate();
 });
 
-els.settingsBtn.addEventListener(
-  'click',
-  openSettings
-);
+const initialSettings = loadSavedSettings();
 
-els.settingsCloseBtn.addEventListener(
-  'click',
-  closeSettings
-);
+if (initialSettings) {
+  applySettings(initialSettings);
+} else {
+  updateAllSettingsUi();
+  saveSettings('初期設定');
+}
 
-els.settingsModal.addEventListener(
-  'click',
-  event => {
-    if (
-      event.target ===
-      els.settingsModal
-    ) {
-      closeSettings();
-    }
-  }
-);
-
-document.addEventListener(
-  'keydown',
-  event => {
-    if (
-      event.key ===
-      'Escape' &&
-      !els.settingsModal
-        .classList
-        .contains('hidden-field')
-    ) {
-      closeSettings();
-    }
-  }
-);
-
-els.roiAdjustBtn.addEventListener(
-  'click',
-  () =>
-    toggleRoiPanel()
-);
-
-els.roiAdjustCloseBtn.addEventListener(
-  'click',
-  () =>
-    toggleRoiPanel(false)
-);
-
-els.cameraBtn.addEventListener(
-  'click',
-  toggleCamera
-);
-
-els.readBtn.addEventListener(
-  'click',
-  handleReadButton
-);
-
-els.undoBtn.addEventListener(
-  'click',
-  undoLast
-);
-
-els.shareBtn.addEventListener(
-  'click',
-  shareCsv
-);
-
-els.saveBtn.addEventListener(
-  'click',
-  downloadCsv
-);
-
-window.addEventListener(
-  'beforeunload',
-  () => {
-    if (timer) {
-      clearInterval(timer);
-    }
-
-    if (stream) {
-      stream
-        .getTracks()
-        .forEach(
-          track =>
-            track.stop()
-        );
-    }
-
-    if (worker) {
-      worker.terminate();
-    }
-  }
-);
-
-updateRoi();
-updateOutputSettingsUi();
-updateReadSettingsUi();
 updateDerivedUi();
+closeMenu();
