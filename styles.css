@@ -29,9 +29,9 @@ button.danger{background:var(--danger);border-color:var(--danger);color:#fff}
 .settings-overview{margin-top:8px;padding:9px 10px;border:1px solid var(--border);border-radius:11px;background:#fff}
 .settings-overview-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
 .settings-overview-head strong{font-size:.98rem}
-.reset-settings-btn{min-height:36px;padding:0 10px;font-size:.84rem;color:var(--muted)}
+.reset-settings-btn{min-height:38px;padding:0 10px;font-size:.9rem;color:var(--muted)}
 .settings-summary{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px}
-.settings-summary span{min-width:0;font-size:.88rem;line-height:1.35;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.settings-summary span{min-width:0;font-size:.9rem;line-height:1.4;color:#374151;overflow-wrap:anywhere}
 section,details{background:var(--card);border-radius:14px;margin:8px 0;box-shadow:0 1px 7px rgb(0 0 0/.05)}
 h2{margin:0;font-size:1.08rem}
 .hidden-field{display:none!important}
