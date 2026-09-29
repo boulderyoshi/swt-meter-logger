@@ -81,6 +81,12 @@ let testMode = false;
 let preTestSettings = null;
 let openMenuName = null;
 
+let roiProfiles = {
+  number: { x: 50, y: 56, w: 62, h: 24 },
+  qr: { x: 50, y: 50, w: 58, h: 58 },
+};
+let activeRoiTarget = 'number';
+
 let changeCheckBusy = false;
 let changeBaseline = null;
 let changeCandidate = null;
@@ -154,7 +160,32 @@ function setCheckedValue(name, value) {
   if (input) input.checked = true;
 }
 
+function syncActiveRoiToProfile() {
+  roiProfiles[activeRoiTarget] = {
+    x: clampInt(els.roiX.value, 5, 95, roiProfiles[activeRoiTarget]?.x ?? 50),
+    y: clampInt(els.roiY.value, 5, 95, roiProfiles[activeRoiTarget]?.y ?? 50),
+    w: clampInt(els.roiW.value, 10, 95, roiProfiles[activeRoiTarget]?.w ?? 58),
+    h: clampInt(els.roiH.value, 8, 90, roiProfiles[activeRoiTarget]?.h ?? 58),
+  };
+}
+
+function loadRoiProfile(target) {
+  const fallback =
+    target === 'qr'
+      ? { x: 50, y: 50, w: 58, h: 58 }
+      : { x: 50, y: 56, w: 62, h: 24 };
+
+  const profile = roiProfiles[target] || fallback;
+
+  els.roiX.value = String(profile.x);
+  els.roiY.value = String(profile.y);
+  els.roiW.value = String(profile.w);
+  els.roiH.value = String(profile.h);
+}
+
 function getSettings() {
+  syncActiveRoiToProfile();
+
   return {
     scanTarget: checkedValue('scanTarget', 'number'),
     numberMode: checkedValue('numberMode', 'integer'),
@@ -164,6 +195,7 @@ function getSettings() {
     roiY: clampInt(els.roiY.value, 5, 95, 56),
     roiW: clampInt(els.roiW.value, 10, 95, 62),
     roiH: clampInt(els.roiH.value, 8, 90, 24),
+    roiProfiles: JSON.parse(JSON.stringify(roiProfiles)),
 
     readMode: checkedValue('readMode', 'auto'),
     autoTrigger: checkedValue('autoTrigger', 'change'),
@@ -185,10 +217,32 @@ function applySettings(settings) {
   setCheckedValue('numberMode', settings.numberMode ?? 'integer');
   els.decimalDigits.value = String(clampInt(settings.decimalDigits, 1, 5, 1));
 
-  els.roiX.value = String(clampInt(settings.roiX, 5, 95, 50));
-  els.roiY.value = String(clampInt(settings.roiY, 5, 95, 56));
-  els.roiW.value = String(clampInt(settings.roiW, 10, 95, 62));
-  els.roiH.value = String(clampInt(settings.roiH, 8, 90, 24));
+  if (settings.roiProfiles) {
+    roiProfiles = {
+      number: {
+        x: clampInt(settings.roiProfiles.number?.x, 5, 95, 50),
+        y: clampInt(settings.roiProfiles.number?.y, 5, 95, 56),
+        w: clampInt(settings.roiProfiles.number?.w, 10, 95, 62),
+        h: clampInt(settings.roiProfiles.number?.h, 8, 90, 24),
+      },
+      qr: {
+        x: clampInt(settings.roiProfiles.qr?.x, 5, 95, 50),
+        y: clampInt(settings.roiProfiles.qr?.y, 5, 95, 50),
+        w: clampInt(settings.roiProfiles.qr?.w, 10, 95, 58),
+        h: clampInt(settings.roiProfiles.qr?.h, 8, 90, 58),
+      },
+    };
+  } else {
+    roiProfiles.number = {
+      x: clampInt(settings.roiX, 5, 95, 50),
+      y: clampInt(settings.roiY, 5, 95, 56),
+      w: clampInt(settings.roiW, 10, 95, 62),
+      h: clampInt(settings.roiH, 8, 90, 24),
+    };
+  }
+
+  activeRoiTarget = settings.scanTarget ?? 'number';
+  loadRoiProfile(activeRoiTarget);
 
   setCheckedValue('readMode', settings.readMode ?? 'auto');
   setCheckedValue('autoTrigger', settings.autoTrigger ?? 'change');
@@ -306,17 +360,10 @@ function closeMenu() {
 function updateRoi() {
   const settings = getSettings();
 
-  if (settings.scanTarget === 'qr') {
-    els.roi.style.left = '50%';
-    els.roi.style.top = '50%';
-    els.roi.style.width = '58%';
-    els.roi.style.height = '58%';
-  } else {
-    els.roi.style.left = `${settings.roiX}%`;
-    els.roi.style.top = `${settings.roiY}%`;
-    els.roi.style.width = `${settings.roiW}%`;
-    els.roi.style.height = `${settings.roiH}%`;
-  }
+  els.roi.style.left = `${settings.roiX}%`;
+  els.roi.style.top = `${settings.roiY}%`;
+  els.roi.style.width = `${settings.roiW}%`;
+  els.roi.style.height = `${settings.roiH}%`;
 
   els.roiXLabel.textContent = `${settings.roiX}%`;
   els.roiYLabel.textContent = `${settings.roiY}%`;
@@ -1352,22 +1399,38 @@ function flashQrSuccess() {
   els.cameraWrap.classList.add('qr-success');
 }
 
-function getQrSourceRect(fraction = 0.90) {
+function getQrSourceRect(expand = 1) {
+  const settings = getSettings();
   const { visibleX, visibleY, visibleW, visibleH } = getVisibleVideoRect();
 
-  const width = visibleW * fraction;
-  const height = visibleH * fraction;
+  const baseW = visibleW * (settings.roiW / 100);
+  const baseH = visibleH * (settings.roiH / 100);
+  const width = Math.min(visibleW, baseW * expand);
+  const height = Math.min(visibleH, baseH * expand);
+
+  const centerX = visibleX + visibleW * (settings.roiX / 100);
+  const centerY = visibleY + visibleH * (settings.roiY / 100);
+
+  const x = Math.max(
+    visibleX,
+    Math.min(visibleX + visibleW - width, centerX - width / 2)
+  );
+
+  const y = Math.max(
+    visibleY,
+    Math.min(visibleY + visibleH - height, centerY - height / 2)
+  );
 
   return {
-    x: Math.max(0, Math.round(visibleX + (visibleW - width) / 2)),
-    y: Math.max(0, Math.round(visibleY + (visibleH - height) / 2)),
+    x: Math.round(x),
+    y: Math.round(y),
     width: Math.max(1, Math.round(width)),
     height: Math.max(1, Math.round(height)),
   };
 }
 
 function getQrScanRegion(detail = false) {
-  const rect = getQrSourceRect(detail ? 0.92 : 0.82);
+  const rect = getQrSourceRect(detail ? 1.35 : 1.10);
   const targetLongSide = detail ? 1600 : 960;
   const scale = Math.min(1, targetLongSide / Math.max(rect.width, rect.height));
 
@@ -1421,7 +1484,7 @@ function scoreQrSharpness(canvas) {
 }
 
 function rememberQrCandidate() {
-  const rect = getQrSourceRect(0.92);
+  const rect = getQrSourceRect(1.35);
   const targetLongSide = 1150;
   const scale = Math.min(1, targetLongSide / Math.max(rect.width, rect.height));
   const width = Math.max(1, Math.round(rect.width * scale));
@@ -2049,9 +2112,18 @@ for (const button of els.saveSettingsBtns) {
 }
 
 for (const input of document.querySelectorAll(
-  'input[name="scanTarget"], input[name="numberMode"], input[name="readMode"], input[name="autoTrigger"], input[name="outputMode"]'
+  'input[name="numberMode"], input[name="readMode"], input[name="autoTrigger"], input[name="outputMode"]'
 )) {
   input.addEventListener('change', menuSettingsChanged);
+}
+
+for (const input of document.querySelectorAll('input[name="scanTarget"]')) {
+  input.addEventListener('change', () => {
+    syncActiveRoiToProfile();
+    activeRoiTarget = checkedValue('scanTarget', 'number');
+    loadRoiProfile(activeRoiTarget);
+    menuSettingsChanged();
+  });
 }
 
 for (const input of [
