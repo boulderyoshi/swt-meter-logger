@@ -142,6 +142,10 @@ function timeOnly(timestamp) {
   return timestamp ? timestamp.slice(11) : '--:--:--';
 }
 
+function isQrMode() {
+  return els.scanTarget.value === 'qr';
+}
+
 function readConfig() {
   if (els.outputMode.value === 'simple') {
     return { mode: 'simple' };
@@ -229,6 +233,7 @@ function tableCapacity(cfg = readConfig()) {
 }
 
 function outputIsFull(cfg = readConfig()) {
+  if (isQrMode()) return false;
   return measurements.length >= tableCapacity(cfg);
 }
 
@@ -287,18 +292,32 @@ function updateOutputSettingsUi() {
 }
 
 function updateReadSettingsUi() {
+  const qr = isQrMode();
   const auto = els.readMode.value === 'auto';
 
+  els.readModeField.classList.toggle('hidden-field', qr);
   els.autoTriggerField.classList.toggle(
     'hidden-field',
-    !auto
+    qr || !auto
   );
-
   els.intervalField.classList.toggle(
     'hidden-field',
-    !auto || els.autoTrigger.value !== 'interval'
+    qr || !auto || els.autoTrigger.value !== 'interval'
   );
+  els.qrModeHint.classList.toggle('hidden-field', !qr);
+  els.outputSettingsSection.classList.toggle('hidden-field', qr);
+  els.numericAdvancedSettings.classList.toggle('hidden-field', qr);
+  els.tablePreviewDetails.classList.toggle('hidden-field', qr);
 
+  els.cameraWrap.classList.toggle('qr-mode', qr);
+  els.currentReading.classList.toggle('qr-reading', qr);
+  els.currentUnit.classList.toggle('hidden-field', qr);
+
+  if (qr) {
+    els.roiAdjustPanel.classList.add('hidden-field');
+  }
+
+  updateDerivedUi();
   updatePrimaryButtons();
 }
 
@@ -309,6 +328,7 @@ function setSettingsLocked(locked) {
   );
 
   [
+    els.scanTarget,
     els.readMode,
     els.autoTrigger,
     els.intervalSec,
