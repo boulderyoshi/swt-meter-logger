@@ -462,17 +462,20 @@ function updateRecentLog() {
     els.recentHeadTime.textContent = '時間';
     els.recentHeadCol.textContent = '管理番号';
     els.recentHeadRow.textContent = '状態';
-    els.recentHeadValue.textContent = '';
+    els.recentHeadValue.textContent = 'No.';
 
-    const recent = qrRecords.slice(-5).reverse();
+    const recent = qrRecords
+      .map((record, index) => ({ record, index }))
+      .slice(-5)
+      .reverse();
 
-    for (const record of recent) {
+    for (const item of recent) {
       const tr = document.createElement('tr');
       const values = [
-        timeOnly(record.timestamp),
-        record.value,
+        timeOnly(item.record.timestamp),
+        item.record.value,
         '登録',
-        ''
+        item.index + 1
       ];
 
       for (const value of values) {
@@ -905,6 +908,7 @@ function registerQrValue(rawValue) {
   if (!value) return false;
 
   if (qrSeen.has(value)) {
+    els.currentValue.textContent = value;
     if (lastQrDetected !== value) {
       setStatus(`登録済み: ${value}`);
     }
