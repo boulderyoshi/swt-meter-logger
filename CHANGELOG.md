@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.4 — 2026-09-30
+
+- Renamed the single-output-mode UI label from `1行` to `1列`.
+
 ## v1.0.3 — 2026-09-30
 
 - Moved expanded settings panels above the camera preview.
