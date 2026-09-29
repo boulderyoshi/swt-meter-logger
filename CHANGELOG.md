@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.3 — 2026-09-30
+
+- Moved expanded settings panels above the camera preview.
+- Replaced manual settings-save buttons with automatic persistence.
+- Added a compact current-settings summary and a confirmed reset-to-default action.
+- Increased UI text sizes while preserving the mobile layout.
+- Added a subtle background to the operation/control area to distinguish it from settings.
+- Kept routine setting changes silent; no save-complete message is shown.
+
 ## v1.0.2 — 2026-09-29
 
 - Replaced the malformed touch/PWA icon assets with the approved cropped artwork.
