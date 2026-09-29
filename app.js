@@ -955,14 +955,17 @@ function registerQrValue(rawValue) {
 
   if (qrSeen.has(value)) {
     els.currentValue.textContent = value;
+
     if (lastQrDetected !== value) {
       setStatus(`登録済み: ${value}`);
     }
+
     lastQrDetected = value;
     return false;
   }
 
   const timestamp = nowIsoLocal();
+
   qrSeen.add(value);
   qrRecords.push({
     value,
@@ -986,14 +989,135 @@ function registerQrValue(rawValue) {
   return true;
 }
 
-function scanQrFrame() {
+async function ensureQrEngine() {
+  if (!window.QrScanner) {
+    return null;
+  }
+
+  if (!qrEnginePromise) {
+    qrEnginePromise = window.QrScanner
+      .createQrEngine('./vendor/qr-scanner-worker.min.js')
+      .catch(err => {
+        console.warn('QR worker unavailable, using jsQR fallback', err);
+        qrEnginePromise = null;
+        return null;
+      });
+  }
+
+  return qrEnginePromise;
+}
+
+function getQrSourceRect(fraction = 0.78) {
+  const vw = els.video.videoWidth;
+  const vh = els.video.videoHeight;
+
+  if (!vw || !vh) {
+    throw new Error('video not ready');
+  }
+
+  const wrap = els.cameraWrap.getBoundingClientRect();
+  const shownAspect = wrap.width / wrap.height;
+  const videoAspect = vw / vh;
+
+  let visibleX = 0;
+  let visibleY = 0;
+  let visibleW = vw;
+  let visibleH = vh;
+
+  if (videoAspect > shownAspect) {
+    visibleW = vh * shownAspect;
+    visibleX = (vw - visibleW) / 2;
+  } else {
+    visibleH = vw / shownAspect;
+    visibleY = (vh - visibleH) / 2;
+  }
+
+  const width = visibleW * fraction;
+  const height = visibleH * fraction;
+
+  return {
+    x: Math.max(0, Math.round(visibleX + (visibleW - width) / 2)),
+    y: Math.max(0, Math.round(visibleY + (visibleH - height) / 2)),
+    width: Math.max(1, Math.round(width)),
+    height: Math.max(1, Math.round(height)),
+  };
+}
+
+function getQrScanRegion(detail = false) {
+  const rect = getQrSourceRect(detail ? 0.86 : 0.76);
+  const targetLongSide = detail ? 1280 : 860;
+  const scale = Math.min(
+    1,
+    targetLongSide / Math.max(rect.width, rect.height)
+  );
+
+  return {
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+    downScaledWidth: Math.max(1, Math.round(rect.width * scale)),
+    downScaledHeight: Math.max(1, Math.round(rect.height * scale)),
+  };
+}
+
+function scanQrWithJsQrFallback() {
+  if (!window.jsQR) return null;
+
+  const rect = getQrSourceRect(0.86);
+  const targetLongSide = 1100;
+  const scale = Math.min(
+    1,
+    targetLongSide / Math.max(rect.width, rect.height)
+  );
+
+  const targetW = Math.max(1, Math.round(rect.width * scale));
+  const targetH = Math.max(1, Math.round(rect.height * scale));
+
+  qrFallbackCanvas.width = targetW;
+  qrFallbackCanvas.height = targetH;
+
+  const ctx = qrFallbackCanvas.getContext(
+    '2d',
+    { willReadFrequently: true }
+  );
+
+  ctx.drawImage(
+    els.video,
+    rect.x,
+    rect.y,
+    rect.width,
+    rect.height,
+    0,
+    0,
+    targetW,
+    targetH
+  );
+
+  const imageData = ctx.getImageData(
+    0,
+    0,
+    targetW,
+    targetH
+  );
+
+  const code = window.jsQR(
+    imageData.data,
+    targetW,
+    targetH,
+    { inversionAttempts: 'attemptBoth' }
+  );
+
+  return code?.data || null;
+}
+
+async function scanQrFrame() {
   if (
     !loggingActive ||
     !isQrMode() ||
     !stream ||
     qrScanBusy ||
-    !els.video.videoWidth ||
-    !window.jsQR
+    !els.video.videoWidth
   ) {
     return;
   }
@@ -1001,55 +1125,111 @@ function scanQrFrame() {
   qrScanBusy = true;
 
   try {
-    const vw = els.video.videoWidth;
-    const vh = els.video.videoHeight;
-    const targetW = Math.min(720, vw);
-    const targetH = Math.max(
-      1,
-      Math.round(targetW * vh / vw)
-    );
+    let decoded = null;
+    const detailPass = qrMissCount > 0 && qrMissCount % 5 === 0;
+    const widePass = qrMissCount > 0 && qrMissCount % 12 === 0;
 
-    qrCanvas.width = targetW;
-    qrCanvas.height = targetH;
+    if (window.QrScanner) {
+      const engine = await ensureQrEngine();
 
-    const ctx = qrCanvas.getContext(
-      '2d',
-      { willReadFrequently: true }
-    );
+      if (engine) {
+        try {
+          const result = await window.QrScanner.scanImage(
+            els.video,
+            {
+              scanRegion: getQrScanRegion(detailPass),
+              qrEngine: engine,
+              canvas: qrCanvas,
+              alsoTryWithoutScanRegion: widePass,
+              returnDetailedScanResult: true,
+            }
+          );
 
-    ctx.drawImage(
-      els.video,
-      0,
-      0,
-      targetW,
-      targetH
-    );
+          decoded = result?.data || null;
+        } catch (err) {
+          // "No QR code found" is normal during continuous scanning.
+        }
+      }
+    }
 
-    const imageData = ctx.getImageData(
-      0,
-      0,
-      targetW,
-      targetH
-    );
+    if (
+      !decoded &&
+      window.jsQR &&
+      (
+        !window.QrScanner ||
+        qrMissCount % 4 === 3
+      )
+    ) {
+      decoded = scanQrWithJsQrFallback();
+    }
 
-    const code = window.jsQR(
-      imageData.data,
-      targetW,
-      targetH,
-      { inversionAttempts: 'attemptBoth' }
-    );
-
-    if (!code?.data) {
+    if (!decoded) {
+      qrMissCount += 1;
       lastQrDetected = '';
       return;
     }
 
-    registerQrValue(code.data);
+    qrMissCount = 0;
+    registerQrValue(decoded);
   } catch (err) {
     console.error('QR scan error', err);
     setStatus('QR読取エラー');
   } finally {
     qrScanBusy = false;
+  }
+}
+
+function stopQrFrameLoop() {
+  if (qrLoopHandle === null) return;
+
+  if (
+    qrLoopUsesVideoCallback &&
+    typeof els.video.cancelVideoFrameCallback === 'function'
+  ) {
+    els.video.cancelVideoFrameCallback(qrLoopHandle);
+  } else {
+    cancelAnimationFrame(qrLoopHandle);
+  }
+
+  qrLoopHandle = null;
+}
+
+function scheduleQrFrameLoop() {
+  if (
+    !loggingActive ||
+    !isQrMode() ||
+    !stream
+  ) {
+    return;
+  }
+
+  const callback = now => {
+    qrLoopHandle = null;
+
+    if (
+      loggingActive &&
+      isQrMode() &&
+      stream
+    ) {
+      if (now - qrLastScanAt >= 50) {
+        qrLastScanAt = now;
+        void scanQrFrame();
+      }
+
+      scheduleQrFrameLoop();
+    }
+  };
+
+  if (
+    typeof els.video.requestVideoFrameCallback === 'function'
+  ) {
+    qrLoopUsesVideoCallback = true;
+    qrLoopHandle =
+      els.video.requestVideoFrameCallback(callback);
+  } else {
+    qrLoopUsesVideoCallback = false;
+    qrLoopHandle =
+      requestAnimationFrame(callback);
   }
 }
 
@@ -1061,7 +1241,10 @@ async function startQrReading() {
     return;
   }
 
-  if (!window.jsQR) {
+  if (
+    !window.QrScanner &&
+    !window.jsQR
+  ) {
     setStatus('QRライブラリ読込失敗');
     return;
   }
@@ -1069,15 +1252,16 @@ async function startQrReading() {
   loggingActive = true;
   setSettingsLocked(true);
   closeSettings();
+
   lastQrDetected = '';
+  qrMissCount = 0;
+  qrLastScanAt = 0;
+
   setStatus('QR連続読取中');
   updatePrimaryButtons();
 
-  scanQrFrame();
-  timer = setInterval(
-    scanQrFrame,
-    100
-  );
+  void ensureQrEngine();
+  scheduleQrFrameLoop();
 }
 
 async function ensureWorker() {
