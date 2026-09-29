@@ -1,0 +1,19 @@
+{
+  "name": "SWT Logger",
+  "short_name": "SWT Logger",
+  "description": "iPhoneのカメラで機器の数字表示やQRコードを読み取り、CSVへ記録・共有するWebロガー。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3f4f6",
+  "theme_color": "#0a84ff",
+  "icons": [
+    {
+      "src": "./assets/app-icon.png?v=1.0.0",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
