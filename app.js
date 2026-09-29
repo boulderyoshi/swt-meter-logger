@@ -1044,8 +1044,8 @@ function getQrSourceRect(fraction = 0.78) {
 }
 
 function getQrScanRegion(detail = false) {
-  const rect = getQrSourceRect(detail ? 0.86 : 0.76);
-  const targetLongSide = detail ? 1280 : 860;
+  const rect = getQrSourceRect(detail ? 0.90 : 0.80);
+  const targetLongSide = detail ? 1600 : 960;
   const scale = Math.min(
     1,
     targetLongSide / Math.max(rect.width, rect.height)
@@ -1064,8 +1064,8 @@ function getQrScanRegion(detail = false) {
 function scanQrWithJsQrFallback() {
   if (!window.jsQR) return null;
 
-  const rect = getQrSourceRect(0.86);
-  const targetLongSide = 1100;
+  const rect = getQrSourceRect(0.92);
+  const targetLongSide = 1500;
   const scale = Math.min(
     1,
     targetLongSide / Math.max(rect.width, rect.height)
@@ -1126,8 +1126,8 @@ async function scanQrFrame() {
 
   try {
     let decoded = null;
-    const detailPass = qrMissCount > 0 && qrMissCount % 5 === 0;
-    const widePass = qrMissCount > 0 && qrMissCount % 12 === 0;
+    const detailPass = qrMissCount > 0 && qrMissCount % 3 === 0;
+    const widePass = qrMissCount > 0 && qrMissCount % 8 === 0;
 
     if (window.QrScanner) {
       const engine = await ensureQrEngine();
@@ -1157,7 +1157,7 @@ async function scanQrFrame() {
       window.jsQR &&
       (
         !window.QrScanner ||
-        qrMissCount % 4 === 3
+        qrMissCount % 6 === 5
       )
     ) {
       decoded = scanQrWithJsQrFallback();
@@ -1211,7 +1211,7 @@ function scheduleQrFrameLoop() {
       isQrMode() &&
       stream
     ) {
-      if (now - qrLastScanAt >= 50) {
+      if (now - qrLastScanAt >= 45) {
         qrLastScanAt = now;
         void scanQrFrame();
       }
