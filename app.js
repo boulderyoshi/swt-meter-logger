@@ -9,8 +9,12 @@ const els = {
 
   menuTabs: [...document.querySelectorAll('.menu-tab')],
   menuPanels: [...document.querySelectorAll('.menu-panel')],
-  saveSettingsBtns: [...document.querySelectorAll('.save-settings-btn')],
   closeMenuBtns: [...document.querySelectorAll('.close-menu-btn')],
+  resetSettingsBtn: document.querySelector('#resetSettingsBtn'),
+  summaryTarget: document.querySelector('#summaryTarget'),
+  summaryRoi: document.querySelector('#summaryRoi'),
+  summaryMethod: document.querySelector('#summaryMethod'),
+  summaryOutput: document.querySelector('#summaryOutput'),
 
   numberOptions: document.querySelector('#numberOptions'),
   decimalDigitsField: document.querySelector('#decimalDigitsField'),
@@ -72,13 +76,37 @@ const els = {
 
 const SETTINGS_KEY = 'swt-logger-settings-v012';
 
+function getDefaultSettings() {
+  return {
+    scanTarget: 'number',
+    numberMode: 'integer',
+    decimalDigits: 1,
+    roiX: 50,
+    roiY: 56,
+    roiW: 62,
+    roiH: 24,
+    roiProfiles: {
+      number: { x: 50, y: 56, w: 62, h: 24 },
+      qr: { x: 50, y: 50, w: 58, h: 58 },
+    },
+    readMode: 'auto',
+    autoTrigger: 'change',
+    timerSeconds: 5,
+    outputMode: 'one-line',
+    useColumns: false,
+    columnCount: 1,
+    useRows: false,
+    rowCount: 1,
+    allowGaps: false,
+  };
+}
+
 let stream = null;
 let worker = null;
 let timer = null;
 let readingActive = false;
 let isReading = false;
 let testMode = false;
-let preTestSettings = null;
 let openMenuName = null;
 
 let roiProfiles = {
@@ -269,18 +297,15 @@ function loadSavedSettings() {
   }
 }
 
-function saveSettings(label = '設定') {
-  const settings = getSettings();
-
+function persistSettings(settings = getSettings()) {
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-    setStatus(`${label}を保存しました`);
+    return true;
   } catch (err) {
     console.warn('settings save failed', err);
     setStatus('設定保存に失敗しました');
+    return false;
   }
-
-  return settings;
 }
 
 function isQrMode() {
@@ -289,6 +314,38 @@ function isQrMode() {
 
 function isTableMode() {
   return getSettings().outputMode === 'table';
+}
+
+function updateSettingsSummary() {
+  const settings = getSettings();
+
+  const target =
+    settings.scanTarget === 'qr'
+      ? 'QRコード'
+      : settings.numberMode === 'decimal'
+        ? `数字・小数${settings.decimalDigits}桁`
+        : '数字・整数';
+
+  const method =
+    settings.readMode === 'manual'
+      ? '手動'
+      : settings.autoTrigger === 'timer'
+        ? `自動・${settings.timerSeconds}秒`
+        : '自動・画面変化';
+
+  let output = '1行';
+  if (settings.outputMode === 'table') {
+    const details = [];
+    if (settings.useColumns) details.push(`横${settings.columnCount}`);
+    if (settings.useRows) details.push(`縦${settings.rowCount}`);
+    if (settings.allowGaps) details.push('空白可');
+    output = details.length ? `表・${details.join('・')}` : '表形式';
+  }
+
+  els.summaryTarget.textContent = `対象: ${target}`;
+  els.summaryRoi.textContent = `範囲: ${settings.roiW}×${settings.roiH}%`;
+  els.summaryMethod.textContent = `方式: ${method}`;
+  els.summaryOutput.textContent = `出力: ${output}`;
 }
 
 function updateNestedSettingsUi() {
@@ -330,6 +387,7 @@ function updateNestedSettingsUi() {
     void optimizeCameraTrack(stream.getVideoTracks()[0], true);
   }
 
+  updateSettingsSummary();
   updateRoi();
   updatePrimaryUi();
   updateDerivedUi();
@@ -849,15 +907,10 @@ function setTestMode(enabled) {
   if (enabled === testMode) return;
 
   if (enabled) {
-    preTestSettings = getSettings();
-    const saved = loadSavedSettings() || getSettings();
-    applySettings(saved);
     testMode = true;
     setStatus('テストモード');
   } else {
     testMode = false;
-    if (preTestSettings) applySettings(preTestSettings);
-    preTestSettings = null;
     setStatus('通常モード');
   }
 
@@ -2091,6 +2144,51 @@ function menuSettingsChanged() {
   updateNestedSettingsUi();
 }
 
+function persistMenuSettings(reflowOutput = false) {
+  const before = loadSavedSettings() || {};
+  const current = getSettings();
+
+  if (!persistSettings(current)) return;
+
+  if (
+    reflowOutput &&
+    !testMode &&
+    outputSignature(before) !== outputSignature(current)
+  ) {
+    reflowRecordsForOutput();
+  } else {
+    updateDerivedUi();
+  }
+}
+
+function applyAndPersistMenuSettings(reflowOutput = false) {
+  menuSettingsChanged();
+  persistMenuSettings(reflowOutput);
+}
+
+function resetSettingsToDefault() {
+  if (!window.confirm('全設定をデフォルトに戻します。よろしいですか？')) {
+    return;
+  }
+
+  if (readingActive) stopReading(false);
+
+  const before = getSettings();
+  const defaults = getDefaultSettings();
+
+  applySettings(defaults);
+  persistSettings(getSettings());
+
+  if (
+    !testMode &&
+    outputSignature(before) !== outputSignature(defaults)
+  ) {
+    reflowRecordsForOutput();
+  } else {
+    updateDerivedUi();
+  }
+}
+
 for (const tab of els.menuTabs) {
   tab.addEventListener('click', () => {
     const name = tab.dataset.menu;
@@ -2106,32 +2204,14 @@ for (const button of els.closeMenuBtns) {
   button.addEventListener('click', closeMenu);
 }
 
-for (const button of els.saveSettingsBtns) {
-  button.addEventListener('click', () => {
-    const section = button.dataset.save || '設定';
-
-    if (readingActive) stopReading(false);
-
-    const before = loadSavedSettings();
-    const current = getSettings();
-    saveSettings(section);
-
-    if (
-      section === 'output' &&
-      !testMode &&
-      outputSignature(before || {}) !== outputSignature(current)
-    ) {
-      reflowRecordsForOutput();
-    } else {
-      updateDerivedUi();
-    }
-  });
+for (const input of document.querySelectorAll(
+  'input[name="numberMode"], input[name="readMode"], input[name="autoTrigger"]'
+)) {
+  input.addEventListener('change', () => applyAndPersistMenuSettings(false));
 }
 
-for (const input of document.querySelectorAll(
-  'input[name="numberMode"], input[name="readMode"], input[name="autoTrigger"], input[name="outputMode"]'
-)) {
-  input.addEventListener('change', menuSettingsChanged);
+for (const input of document.querySelectorAll('input[name="outputMode"]')) {
+  input.addEventListener('change', () => applyAndPersistMenuSettings(true));
 }
 
 for (const input of document.querySelectorAll('input[name="scanTarget"]')) {
@@ -2139,26 +2219,30 @@ for (const input of document.querySelectorAll('input[name="scanTarget"]')) {
     syncActiveRoiToProfile();
     activeRoiTarget = checkedValue('scanTarget', 'number');
     loadRoiProfile(activeRoiTarget);
-    menuSettingsChanged();
+    applyAndPersistMenuSettings(false);
   });
 }
 
-for (const input of [
-  els.decimalDigits,
-  els.roiX,
-  els.roiY,
-  els.roiW,
-  els.roiH,
-  els.timerSeconds,
-  els.useColumns,
-  els.columnCount,
-  els.useRows,
-  els.rowCount,
-  els.allowGaps,
-]) {
+els.decimalDigits.addEventListener('change', () => applyAndPersistMenuSettings(false));
+
+for (const input of [els.roiX, els.roiY, els.roiW, els.roiH]) {
   input.addEventListener('input', menuSettingsChanged);
-  input.addEventListener('change', menuSettingsChanged);
+  input.addEventListener('change', () => persistMenuSettings(false));
 }
+
+els.timerSeconds.addEventListener('input', menuSettingsChanged);
+els.timerSeconds.addEventListener('change', () => persistMenuSettings(false));
+
+for (const input of [els.useColumns, els.useRows, els.allowGaps]) {
+  input.addEventListener('change', () => applyAndPersistMenuSettings(true));
+}
+
+for (const input of [els.columnCount, els.rowCount]) {
+  input.addEventListener('input', menuSettingsChanged);
+  input.addEventListener('change', () => persistMenuSettings(true));
+}
+
+els.resetSettingsBtn.addEventListener('click', resetSettingsToDefault);
 
 els.cameraBtn.addEventListener('click', toggleCamera);
 els.readBtn.addEventListener('click', handleReadButton);
@@ -2184,8 +2268,9 @@ const initialSettings = loadSavedSettings();
 if (initialSettings) {
   applySettings(initialSettings);
 } else {
-  updateAllSettingsUi();
-  saveSettings('初期設定');
+  const defaults = getDefaultSettings();
+  applySettings(defaults);
+  persistSettings(defaults);
 }
 
 updateDerivedUi();
