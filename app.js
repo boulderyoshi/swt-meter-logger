@@ -463,7 +463,7 @@ function nextCursorPosition(current = cursor) {
   const next = { row: current.row, col: current.col };
 
   if (settings.outputMode !== 'table') {
-    return { row: 0, col: current.col + 1 };
+    return { row: current.row + 1, col: 0 };
   }
 
   if (settings.useColumns) {
@@ -484,7 +484,7 @@ function currentTargetDescription() {
   const settings = getSettings();
 
   if (settings.outputMode === 'one-line') {
-    return `1行 / ${records.length + 1}列`;
+    return `${records.length + 1}行 / 1列`;
   }
 
   if (outputFull()) {
@@ -530,8 +530,8 @@ function pushRecord(value, source, status, confidence) {
     source,
     status,
     confidence: confidence ?? null,
-    row: settings.outputMode === 'one-line' ? 0 : cursor.row,
-    col: settings.outputMode === 'one-line' ? records.length : cursor.col,
+    row: settings.outputMode === 'one-line' ? records.length : cursor.row,
+    col: settings.outputMode === 'one-line' ? 0 : cursor.col,
   };
 
   records.push(record);
@@ -547,7 +547,7 @@ function pushRecord(value, source, status, confidence) {
 
   cursor =
     settings.outputMode === 'one-line'
-      ? { row: 0, col: records.length }
+      ? { row: records.length, col: 0 }
       : nextCursorPosition(cursor);
 
   showReadResult(record.value, source, status, confidence, false);
@@ -646,8 +646,8 @@ function reflowRecordsForOutput() {
 
     const record = {
       ...old,
-      row: settings.outputMode === 'one-line' ? 0 : cursor.row,
-      col: settings.outputMode === 'one-line' ? records.length : cursor.col,
+      row: settings.outputMode === 'one-line' ? records.length : cursor.row,
+      col: settings.outputMode === 'one-line' ? 0 : cursor.col,
     };
 
     records.push(record);
@@ -661,7 +661,7 @@ function reflowRecordsForOutput() {
 
     cursor =
       settings.outputMode === 'one-line'
-        ? { row: 0, col: records.length }
+        ? { row: records.length, col: 0 }
         : nextCursorPosition(cursor);
   }
 
@@ -729,8 +729,8 @@ function previewSize() {
 
   if (settings.outputMode === 'one-line') {
     return {
-      rows: 1,
-      cols: Math.max(records.length + 1, 1),
+      rows: Math.max(records.length + 1, 1),
+      cols: 1,
     };
   }
 
@@ -778,19 +778,18 @@ function renderPreview() {
 
   if (settings.outputMode === 'one-line') {
     const tbody = document.createElement('tbody');
-    const tr = document.createElement('tr');
-
     const count = Math.max(records.length + 1, 1);
 
     for (let i = 0; i < count; i++) {
+      const tr = document.createElement('tr');
       const td = document.createElement('td');
       td.textContent = records[i]?.value ?? '';
 
       if (i === records.length) td.classList.add('active-cell');
       tr.append(td);
+      tbody.append(tr);
     }
 
-    tbody.append(tr);
     els.previewTable.append(tbody);
     return;
   }
@@ -2038,7 +2037,7 @@ function buildCsvText() {
   const settings = getSettings();
 
   if (settings.outputMode === 'one-line') {
-    return '\uFEFF' + records.map(record => csvEscape(record.value)).join(',');
+    return '\uFEFF' + records.map(record => csvEscape(record.value)).join('\r\n');
   }
 
   const matrix = buildMatrix();
