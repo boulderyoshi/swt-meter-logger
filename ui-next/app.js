@@ -83,12 +83,12 @@ function getDefaultSettings() {
     numberMode: 'integer',
     decimalDigits: 1,
     roiX: 50,
-    roiY: 56,
-    roiW: 62,
-    roiH: 24,
+    roiY: 30,
+    roiW: 70,
+    roiH: 25,
     roiProfiles: {
-      number: { x: 50, y: 56, w: 62, h: 24 },
-      qr: { x: 50, y: 50, w: 58, h: 58 },
+      number: { x: 50, y: 30, w: 70, h: 25 },
+      qr: { x: 50, y: 27, w: 60, h: 35 },
     },
     readMode: 'auto',
     autoTrigger: 'change',
@@ -111,8 +111,8 @@ let testMode = false;
 let openMenuName = null;
 
 let roiProfiles = {
-  number: { x: 50, y: 56, w: 62, h: 24 },
-  qr: { x: 50, y: 50, w: 58, h: 58 },
+  number: { x: 50, y: 30, w: 70, h: 25 },
+  qr: { x: 50, y: 27, w: 60, h: 35 },
 };
 let activeRoiTarget = 'number';
 
@@ -201,8 +201,8 @@ function syncActiveRoiToProfile() {
 function loadRoiProfile(target) {
   const fallback =
     target === 'qr'
-      ? { x: 50, y: 50, w: 58, h: 58 }
-      : { x: 50, y: 56, w: 62, h: 24 };
+      ? { x: 50, y: 27, w: 60, h: 35 }
+      : { x: 50, y: 30, w: 70, h: 25 };
 
   const profile = roiProfiles[target] || fallback;
 
@@ -221,9 +221,9 @@ function getSettings() {
     decimalDigits: clampInt(els.decimalDigits.value, 1, 5, 1),
 
     roiX: clampInt(els.roiX.value, 5, 95, 50),
-    roiY: clampInt(els.roiY.value, 5, 95, 56),
-    roiW: clampInt(els.roiW.value, 10, 95, 62),
-    roiH: clampInt(els.roiH.value, 8, 90, 24),
+    roiY: clampInt(els.roiY.value, 5, 95, 30),
+    roiW: clampInt(els.roiW.value, 10, 95, 70),
+    roiH: clampInt(els.roiH.value, 8, 90, 25),
     roiProfiles: JSON.parse(JSON.stringify(roiProfiles)),
 
     readMode: checkedValue('readMode', 'auto'),
@@ -250,23 +250,23 @@ function applySettings(settings) {
     roiProfiles = {
       number: {
         x: clampInt(settings.roiProfiles.number?.x, 5, 95, 50),
-        y: clampInt(settings.roiProfiles.number?.y, 5, 95, 56),
-        w: clampInt(settings.roiProfiles.number?.w, 10, 95, 62),
-        h: clampInt(settings.roiProfiles.number?.h, 8, 90, 24),
+        y: clampInt(settings.roiProfiles.number?.y, 5, 95, 30),
+        w: clampInt(settings.roiProfiles.number?.w, 10, 95, 70),
+        h: clampInt(settings.roiProfiles.number?.h, 8, 90, 25),
       },
       qr: {
         x: clampInt(settings.roiProfiles.qr?.x, 5, 95, 50),
-        y: clampInt(settings.roiProfiles.qr?.y, 5, 95, 50),
-        w: clampInt(settings.roiProfiles.qr?.w, 10, 95, 58),
-        h: clampInt(settings.roiProfiles.qr?.h, 8, 90, 58),
+        y: clampInt(settings.roiProfiles.qr?.y, 5, 95, 27),
+        w: clampInt(settings.roiProfiles.qr?.w, 10, 95, 60),
+        h: clampInt(settings.roiProfiles.qr?.h, 8, 90, 35),
       },
     };
   } else {
     roiProfiles.number = {
       x: clampInt(settings.roiX, 5, 95, 50),
-      y: clampInt(settings.roiY, 5, 95, 56),
-      w: clampInt(settings.roiW, 10, 95, 62),
-      h: clampInt(settings.roiH, 8, 90, 24),
+      y: clampInt(settings.roiY, 5, 95, 30),
+      w: clampInt(settings.roiW, 10, 95, 70),
+      h: clampInt(settings.roiH, 8, 90, 25),
     };
   }
 
