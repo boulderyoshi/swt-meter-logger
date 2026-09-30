@@ -9,7 +9,7 @@ This repository is the source of truth for SWT Logger.
 - Public app: https://boulderyoshi.github.io/swt-meter-logger/
 - Current public version: **v1.0.6**
 - UI redesign preview: https://boulderyoshi.github.io/swt-meter-logger/ui-next/
-- UI redesign preview version: **0.1.0**
+- UI redesign preview version: **0.1.1**
 
 Do not treat chat transcripts, downloaded ZIP files, browser caches, or local copies as authoritative if they differ from `main`.
 
@@ -31,7 +31,8 @@ The first `ui-next` implementation keeps the existing v1.0.6 reading logic and a
 - settings moved into a separate overlay panel
 - test mode and diagnostics moved under advanced settings
 - iPhone safe-area-aware layout
-- existing `app.js` remains shared so OCR / QR / monitoring / CSV logic is not redesigned as part of the UI work
+- `ui-next/app.js` is a snapshot of the v1.0.6 runtime with only preview-isolation changes; OCR / QR / monitoring / CSV behavior is intentionally preserved
+- preview settings use a separate localStorage key, so changing `/ui-next/` settings does not alter the root public app
 
 Core functions currently available:
 
@@ -68,8 +69,9 @@ Core functions currently available:
 
 - `index.html` — current public UI structure and external library loading
 - `styles.css` — current public mobile UI
-- `app.js` — shared camera, OCR, QR, output engine, settings, test mode, CSV logic
+- `app.js` — current public camera, OCR, QR, output engine, settings, test mode, CSV logic
 - `ui-next/index.html` — isolated camera-first UI preview
+- `ui-next/app.js` — isolated snapshot of the v1.0.6 runtime for the preview
 - `ui-next/styles.css` — UI redesign presentation layer
 - `ui-next/ui-shell.js` — redesign-only mode switching, settings overlay, result pulse, and bottom-sheet interaction
 - `manifest.webmanifest` — installable web-app metadata
