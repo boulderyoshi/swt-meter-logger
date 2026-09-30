@@ -88,6 +88,9 @@ select,input[type="number"]{width:100%;min-height:42px;border:1px solid var(--bo
 .section-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .section-head span{color:var(--muted);font-size:.84rem}
 .small-btn{min-height:38px;padding:0 10px;font-size:.9rem}
+.record-actions{display:flex;align-items:center;gap:6px}
+.clear-records-btn{color:var(--danger);border-color:rgba(215,0,21,.32);background:#fff}
+.clear-records-btn:not(:disabled):active{background:rgba(215,0,21,.06)}
 .recent-table-wrap{margin-top:8px;overflow:hidden;border:1px solid #eee;border-radius:9px}
 #recentTable{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 #recentTable th,#recentTable td{padding:8px;border-bottom:1px solid #eee;text-align:left;font-size:.88rem}
