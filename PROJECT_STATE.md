@@ -9,7 +9,7 @@ This repository is the source of truth for SWT Logger.
 - Public app: https://boulderyoshi.github.io/swt-meter-logger/
 - Current public version: **v1.0.6**
 - UI redesign preview: https://boulderyoshi.github.io/swt-meter-logger/ui-next/
-- UI redesign preview version: **0.1.2**
+- UI redesign preview version: **0.1.3**
 
 Do not treat chat transcripts, downloaded ZIP files, browser caches, or local copies as authoritative if they differ from `main`.
 
@@ -31,6 +31,10 @@ The first `ui-next` implementation keeps the existing v1.0.6 reading logic and a
 - settings moved into a separate overlay panel
 - test mode and diagnostics moved under advanced settings
 - iPhone safe-area-aware layout
+- camera-visible ROI adjustment tray opened from settings; the full settings overlay closes while adjusting
+- live ROI sliders auto-save while the camera and yellow frame remain visible
+- default OCR ROI: x 50%, y 30%, width 70%, height 25%
+- default QR ROI: x 50%, y 27%, width 60%, height 35%
 - `ui-next/app.js` is a snapshot of the v1.0.6 runtime with only preview-isolation changes; OCR / QR / monitoring / CSV behavior is intentionally preserved
 - preview settings use a separate localStorage key, so changing `/ui-next/` settings does not alter the root public app
 - ui-next does not force AF / AE / white-balance modes through `applyConstraints`; Safari camera defaults are preserved to avoid capture interruption and recognition instability
