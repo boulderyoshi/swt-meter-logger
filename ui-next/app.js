@@ -75,7 +75,7 @@ const els = {
   ocrCanvas: document.querySelector('#ocrCanvas'),
 };
 
-const SETTINGS_KEY = 'swt-logger-settings-ui-next-v010';
+const SETTINGS_KEY = 'swt-logger-settings-ui-next-v013';
 
 function getDefaultSettings() {
   return {
