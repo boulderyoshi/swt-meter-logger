@@ -7,7 +7,7 @@ This repository is the source of truth for SWT Logger.
 - Repository: `boulderyoshi/swt-meter-logger`
 - Canonical branch: `main`
 - Public app: https://boulderyoshi.github.io/swt-meter-logger/
-- Current public version: **v1.0.5**
+- Current public version: **v1.0.6**
 
 Do not treat chat transcripts, downloaded ZIP files, browser caches, or local copies as authoritative if they differ from `main`.
 
@@ -39,6 +39,7 @@ Core functions currently available:
 - Shared CSV output engine for numeric OCR and QR
 - Recent-record list
 - Undo last operation
+- Confirmed clear-all reset for recorded readings
 - iOS share sheet
 - CSV file save
 - PWA manifest and app icon
