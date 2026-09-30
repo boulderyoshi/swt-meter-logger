@@ -58,6 +58,7 @@ const els = {
   recordCount: document.querySelector('#recordCount'),
 
   undoBtn: document.querySelector('#undoBtn'),
+  clearRecordsBtn: document.querySelector('#clearRecordsBtn'),
   recentBody: document.querySelector('#recentBody'),
 
   exportSummary: document.querySelector('#exportSummary'),
@@ -620,6 +621,33 @@ function undoLast() {
   updateDerivedUi();
 }
 
+function clearAllRecords() {
+  if (testMode || !records.length) return;
+
+  if (!window.confirm('読み取った記録をすべて削除します。よろしいですか？')) {
+    return;
+  }
+
+  if (readingActive) stopReading(false);
+
+  records.length = 0;
+  history.length = 0;
+  cursor = { row: 0, col: 0 };
+
+  qrSeen.clear();
+  lastQrDetected = '';
+  qrFrameCursor = 0;
+  qrFrameCount = 0;
+  qrFrameScores.fill(0);
+
+  els.currentValue.textContent = '--';
+  els.currentUnit.textContent = '';
+  els.confidence.textContent = '--';
+
+  setStatus('記録を全削除しました');
+  updateDerivedUi();
+}
+
 function reflowRecordsForOutput() {
   const settings = getSettings();
 
@@ -892,6 +920,7 @@ function updateDerivedUi() {
 
   const hasData = records.length > 0;
   els.undoBtn.disabled = testMode || !history.length;
+  els.clearRecordsBtn.disabled = testMode || !hasData;
   els.shareBtn.disabled = !hasData;
   els.saveBtn.disabled = !hasData;
 
@@ -2249,6 +2278,7 @@ els.testModeBtn.addEventListener('click', () => setTestMode(!testMode));
 els.blankBtn.addEventListener('click', insertBlank);
 els.nextRowBtn.addEventListener('click', moveNextRow);
 els.undoBtn.addEventListener('click', undoLast);
+els.clearRecordsBtn.addEventListener('click', clearAllRecords);
 els.shareBtn.addEventListener('click', shareCsv);
 els.saveBtn.addEventListener('click', downloadCsv);
 
