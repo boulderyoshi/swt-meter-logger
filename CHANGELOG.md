@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.6 — 2026-09-30
+
+- Added a `全削除` action for recorded readings.
+- Clearing records requires confirmation, stops active reading, resets row/column position, QR duplicate state, preview, and export state while preserving app settings.
+
 ## v1.0.5 — 2026-09-30
 
 - Corrected `1列` mode to store each reading in the next row of a single column.
