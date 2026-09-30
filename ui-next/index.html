@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#050505" />
+  <meta name="description" content="SWT Logger 次世代カメラUIの開発プレビュー。" />
+  <base href="../" />
+  <title>SWT Logger UI Next</title>
+  <link rel="stylesheet" href="./ui-next/styles.css?v=0.1.0" />
+</head>
+<body>
+  <main class="app">
+    <section class="camera-stage" aria-label="カメラ読み取り">
+      <div class="camera-wrap" id="cameraWrap">
+        <video id="video" playsinline muted></video>
+
+        <div class="roi" id="roi" aria-label="読み取り範囲">
+          <span class="roi-corner tl"></span>
+          <span class="roi-corner tr"></span>
+          <span class="roi-corner bl"></span>
+          <span class="roi-corner br"></span>
+        </div>
+
+        <div id="testBadge" class="test-badge hidden-field">テストモード</div>
+
+        <div class="ocr-mini" id="ocrMini" aria-label="OCRプレビュー">
+          <div>OCR</div>
+          <canvas id="debugCanvas"></canvas>
+          <strong id="ocrMiniText">--</strong>
+        </div>
+      </div>
+
+      <div class="top-overlay">
+        <span class="top-spacer" aria-hidden="true"></span>
+
+        <div class="mode-switch" role="group" aria-label="読み取り対象">
+          <button class="mode-btn active" type="button" data-target="number" aria-pressed="true">OCR</button>
+          <button class="mode-btn" type="button" data-target="qr" aria-pressed="false">QR</button>
+        </div>
+
+        <button id="settingsOpenBtn" class="icon-btn" type="button" aria-label="設定を開く">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.1A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.4 4a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.18.37.29.76.3 1.17V10h1.3v4h-1.3v-.17c-.01.41-.12.8-.3 1.17z"></path>
+          </svg>
+        </button>
+      </div>
+
+      <div id="scanHint" class="scan-hint">カメラを接続してください</div>
+
+      <div id="floatingResult" class="floating-result" aria-live="polite">
+        <div class="result-check">✓</div>
+        <div class="result-main">
+          <span id="currentReadingLabel" class="current-reading-label">現在値</span>
+          <div class="result-value-row">
+            <strong id="currentValue">--</strong>
+            <b id="currentUnit"></b>
+          </div>
+          <div class="result-meta">
+            <span id="resultSource" class="source-chip">OCR</span>
+            <span id="resultTime">--:--:--</span>
+            <span>信頼度 <b id="confidence">--</b></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="control-dock" aria-label="読み取り操作">
+        <button id="cameraBtn" type="button">カメラ接続</button>
+        <button id="readBtn" type="button" class="primary" disabled>読み取り開始</button>
+      </div>
+
+      <div class="status-pill"><span id="status">待機中</span></div>
+
+      <div class="step-guide" aria-hidden="true">
+        <span id="stepCamera" class="step active">1 カメラ接続</span>
+        <span id="stepRead" class="step">2 読み取り開始</span>
+      </div>
+    </section>
+
+    <section id="bottomSheet" class="bottom-sheet" data-state="compact" aria-label="読み取り履歴">
+      <button id="sheetGrabber" class="sheet-grabber" type="button" aria-label="履歴を展開"></button>
+
+      <div class="sheet-scroll">
+        <section class="recent-card">
+          <div class="section-head">
+            <div>
+              <h2>読み取り結果</h2>
+              <div class="sheet-count"><b id="recordCount">0</b><span>件</span></div>
+            </div>
+            <div class="record-actions">
+              <button id="undoBtn" class="small-btn" type="button" disabled>1つ戻す</button>
+              <button id="clearRecordsBtn" class="small-btn clear-records-btn" type="button" disabled>全削除</button>
+            </div>
+          </div>
+
+          <div class="recent-table-wrap">
+            <table id="recentTable">
+              <thead>
+                <tr><th>時間</th><th>列</th><th>行</th><th>値</th></tr>
+              </thead>
+              <tbody id="recentBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <div class="sheet-utility">
+          <div>
+            <span>次の保存先 </span>
+            <strong id="targetLine">1行 / 1列</strong>
+            <span> ・ 最終 </span>
+            <b id="lastTime">--:--:--</b>
+          </div>
+
+          <div id="gapActions" class="gap-actions hidden-field">
+            <button id="blankBtn" type="button">空白</button>
+            <button id="nextRowBtn" type="button">改行</button>
+          </div>
+        </div>
+
+        <section class="export-card">
+          <div class="section-head">
+            <h2>出力</h2>
+            <span id="exportSummary" class="export-summary">記録なし</span>
+          </div>
+
+          <div class="export-actions">
+            <button id="shareBtn" class="primary" type="button" disabled>共有</button>
+            <button id="saveBtn" type="button" disabled>ファイル保存</button>
+          </div>
+        </section>
+
+        <details class="table-preview-card" id="tablePreviewDetails">
+          <summary>表形式プレビュー</summary>
+          <div class="table-wrap">
+            <table id="previewTable"></table>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <aside id="settingsSheet" class="settings-sheet" aria-hidden="true">
+      <div class="settings-inner">
+        <div class="settings-head">
+          <h2>設定</h2>
+          <button id="settingsCloseBtn" class="settings-close" type="button">閉じる</button>
+        </div>
+
+        <div class="settings-overview" aria-label="現在の設定">
+          <div class="settings-overview-head">
+            <strong>現在設定</strong>
+            <button id="resetSettingsBtn" class="reset-settings-btn" type="button">デフォルトに戻す</button>
+          </div>
+          <div class="settings-summary">
+            <span id="summaryTarget">対象: --</span>
+            <span id="summaryRoi">範囲: --</span>
+            <span id="summaryMethod">方式: --</span>
+            <span id="summaryOutput">出力: --</span>
+          </div>
+        </div>
+
+        <nav class="top-menu" aria-label="設定カテゴリ">
+          <button class="menu-tab" type="button" data-menu="target">読取対象</button>
+          <button class="menu-tab" type="button" data-menu="roi">読取範囲</button>
+          <button class="menu-tab" type="button" data-menu="method">読取方式</button>
+          <button class="menu-tab" type="button" data-menu="output">出力方法</button>
+        </nav>
+
+        <div class="menu-stage">
+          <section class="menu-panel hidden-field" data-panel="target">
+            <h2>読取対象</h2>
+
+            <label class="radio-row">
+              <input type="radio" name="scanTarget" value="number" checked />
+              数字OCR
+            </label>
+
+            <div id="numberOptions" class="nested-options">
+              <label class="radio-row">
+                <input type="radio" name="numberMode" value="integer" checked />
+                整数
+              </label>
+              <label class="radio-row">
+                <input type="radio" name="numberMode" value="decimal" />
+                小数点
+              </label>
+
+              <label id="decimalDigitsField" class="sub-field hidden-field">
+                桁数
+                <select id="decimalDigits">
+                  <option value="1" selected>1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                </select>
+              </label>
+            </div>
+
+            <label class="radio-row">
+              <input type="radio" name="scanTarget" value="qr" />
+              QRコード
+            </label>
+
+            <div class="menu-actions">
+              <button class="close-menu-btn" type="button">閉じる</button>
+            </div>
+          </section>
+
+          <section class="menu-panel hidden-field" data-panel="roi">
+            <h2>読取範囲調整</h2>
+            <div class="roi-grid">
+              <label>横位置 <span id="roiXLabel">50%</span><input id="roiX" type="range" min="5" max="95" value="50" /></label>
+              <label>縦位置 <span id="roiYLabel">56%</span><input id="roiY" type="range" min="5" max="95" value="56" /></label>
+              <label>枠の横幅 <span id="roiWLabel">62%</span><input id="roiW" type="range" min="10" max="95" value="62" /></label>
+              <label>枠の縦幅 <span id="roiHLabel">24%</span><input id="roiH" type="range" min="8" max="90" value="24" /></label>
+            </div>
+
+            <div class="menu-actions">
+              <button class="close-menu-btn" type="button">閉じる</button>
+            </div>
+          </section>
+
+          <section class="menu-panel hidden-field" data-panel="method">
+            <h2>読取方式</h2>
+
+            <label class="radio-row">
+              <input type="radio" name="readMode" value="manual" />
+              手動
+            </label>
+            <label class="radio-row">
+              <input type="radio" name="readMode" value="auto" checked />
+              自動
+            </label>
+
+            <div id="autoOptions" class="nested-options">
+              <label class="radio-row">
+                <input type="radio" name="autoTrigger" value="change" checked />
+                画面変化式
+              </label>
+              <label class="radio-row">
+                <input type="radio" name="autoTrigger" value="timer" />
+                タイマー式
+              </label>
+
+              <label id="timerSecondsField" class="sub-field hidden-field">
+                時間選択（1～300秒）
+                <input id="timerSeconds" type="number" inputmode="numeric" min="1" max="300" step="1" value="5" />
+              </label>
+            </div>
+
+            <div class="menu-actions">
+              <button class="close-menu-btn" type="button">閉じる</button>
+            </div>
+          </section>
+
+          <section class="menu-panel hidden-field" data-panel="output">
+            <h2>出力方法</h2>
+
+            <label class="radio-row">
+              <input type="radio" name="outputMode" value="one-line" checked />
+              1列
+            </label>
+            <label class="radio-row">
+              <input type="radio" name="outputMode" value="table" />
+              表形式
+            </label>
+
+            <div id="tableOptions" class="nested-options hidden-field">
+              <div class="check-setting">
+                <label class="check-row"><input id="useColumns" type="checkbox" /> 横（列数）</label>
+                <input id="columnCount" type="number" inputmode="numeric" min="1" step="1" value="1" />
+              </div>
+
+              <div class="check-setting">
+                <label class="check-row"><input id="useRows" type="checkbox" /> 縦（行）</label>
+                <input id="rowCount" type="number" inputmode="numeric" min="1" step="1" value="1" />
+              </div>
+
+              <label class="check-row">
+                <input id="allowGaps" type="checkbox" />
+                空白・任意改行を許可
+              </label>
+
+              <p class="menu-hint">
+                表のヘッダーは行・列とも自動採番します。行数を指定した場合、指定行数を超えると読み取りを停止します。
+              </p>
+            </div>
+
+            <div class="menu-actions">
+              <button class="close-menu-btn" type="button">閉じる</button>
+            </div>
+          </section>
+        </div>
+
+        <details class="advanced-details">
+          <summary>高度な設定・診断</summary>
+          <div class="advanced-body">
+            <button id="testModeBtn" class="test-mode-btn" type="button">テストモード</button>
+
+            <details class="diagnostics-card">
+              <summary>診断情報</summary>
+              <div class="diagnostics">
+                <progress id="ocrProgress" max="1" value="0"></progress>
+                <p id="ocrText">OCR未実行</p>
+              </div>
+            </details>
+          </div>
+        </details>
+      </div>
+    </aside>
+
+    <canvas id="captureCanvas" hidden></canvas>
+    <canvas id="ocrCanvas" hidden></canvas>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="./vendor/qr-scanner.umd.min.js?v=1.0.2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.4/dist/iife/reader/index.js"></script>
+  <script src="./app.js?v=1.0.6"></script>
+  <script src="./ui-next/ui-shell.js?v=0.1.0"></script>
+</body>
+</html>
