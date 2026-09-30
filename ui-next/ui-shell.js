@@ -7,6 +7,10 @@
   const settingsSheet = q('#settingsSheet');
   const settingsOpenBtn = q('#settingsOpenBtn');
   const settingsCloseBtn = q('#settingsCloseBtn');
+  const roiAdjustOpenBtn = q('#roiAdjustOpenBtn');
+  const roiAdjustSheet = q('#roiAdjustSheet');
+  const roiAdjustCloseBtn = q('#roiAdjustCloseBtn');
+  const roiAdjustTarget = q('#roiAdjustTarget');
   const currentValue = q('#currentValue');
   const floatingResult = q('#floatingResult');
   const resultSource = q('#resultSource');
@@ -56,6 +60,10 @@
       resultSource.textContent = target === 'qr' ? 'QR' : 'OCR';
     }
 
+    if (roiAdjustTarget) {
+      roiAdjustTarget.textContent = target === 'qr' ? 'QR' : 'OCR';
+    }
+
     updateScanHint();
   }
 
@@ -87,6 +95,7 @@
   }
 
   function openSettings() {
+    closeRoiAdjust(false);
     settingsSheet.classList.add('open');
     settingsSheet.setAttribute('aria-hidden', 'false');
     settingsCloseBtn.focus({ preventScroll: true });
@@ -96,6 +105,27 @@
     settingsSheet.classList.remove('open');
     settingsSheet.setAttribute('aria-hidden', 'true');
     settingsOpenBtn.focus({ preventScroll: true });
+  }
+
+  function openRoiAdjust() {
+    settingsSheet.classList.remove('open');
+    settingsSheet.setAttribute('aria-hidden', 'true');
+    roiAdjustSheet.classList.add('open');
+    roiAdjustSheet.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('roi-adjust-active');
+    syncModeUi();
+  }
+
+  function closeRoiAdjust(returnToSettings = true) {
+    if (!roiAdjustSheet) return;
+    roiAdjustSheet.classList.remove('open');
+    roiAdjustSheet.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('roi-adjust-active');
+
+    if (returnToSettings) {
+      settingsSheet.classList.add('open');
+      settingsSheet.setAttribute('aria-hidden', 'false');
+    }
   }
 
   function pulseResult() {
@@ -129,13 +159,22 @@
 
   settingsOpenBtn.addEventListener('click', openSettings);
   settingsCloseBtn.addEventListener('click', closeSettings);
+  roiAdjustOpenBtn.addEventListener('click', openRoiAdjust);
+  roiAdjustCloseBtn.addEventListener('click', () => closeRoiAdjust(true));
 
   settingsSheet.addEventListener('click', event => {
     if (event.target === settingsSheet) closeSettings();
   });
 
   document.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && settingsSheet.classList.contains('open')) {
+    if (event.key !== 'Escape') return;
+
+    if (roiAdjustSheet.classList.contains('open')) {
+      closeRoiAdjust(true);
+      return;
+    }
+
+    if (settingsSheet.classList.contains('open')) {
       closeSettings();
     }
   });
