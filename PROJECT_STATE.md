@@ -8,12 +8,30 @@ This repository is the source of truth for SWT Logger.
 - Canonical branch: `main`
 - Public app: https://boulderyoshi.github.io/swt-meter-logger/
 - Current public version: **v1.0.6**
+- UI redesign preview: https://boulderyoshi.github.io/swt-meter-logger/ui-next/
+- UI redesign preview version: **0.1.0**
 
 Do not treat chat transcripts, downloaded ZIP files, browser caches, or local copies as authoritative if they differ from `main`.
 
 ## Current status
 
 The first formal public version is complete and deployed through GitHub Pages.
+
+The camera-first UI redesign is being developed separately under `/ui-next/`. The root public app remains the approved v1.0.6 UI until explicit approval to replace it.
+
+The first `ui-next` implementation keeps the existing v1.0.6 reading logic and adds a separate presentation shell:
+
+- full-screen camera-first layout
+- floating OCR / QR mode switch
+- four-corner ROI treatment
+- floating recognition-result display
+- compact / mid / full bottom-sheet states
+- swipe / tap bottom-sheet expansion
+- history, clear, undo, share, save, and preview moved into the bottom sheet
+- settings moved into a separate overlay panel
+- test mode and diagnostics moved under advanced settings
+- iPhone safe-area-aware layout
+- existing `app.js` remains shared so OCR / QR / monitoring / CSV logic is not redesigned as part of the UI work
 
 Core functions currently available:
 
@@ -36,7 +54,7 @@ Core functions currently available:
 - Table-form CSV output
 - Automatic row / column numbering
 - Optional blank cell / next-row operation
-- Shared CSV output engine for numeric OCR and QR
+- Shared output engine for numeric OCR and QR
 - Recent-record list
 - Undo last operation
 - Confirmed clear-all reset for recorded readings
@@ -48,19 +66,24 @@ Core functions currently available:
 
 ## Main files
 
-- `index.html` — UI structure and external library loading
-- `styles.css` — mobile UI, camera, menus, test mode, feedback
-- `app.js` — camera, OCR, QR, output engine, settings, test mode, CSV
+- `index.html` — current public UI structure and external library loading
+- `styles.css` — current public mobile UI
+- `app.js` — shared camera, OCR, QR, output engine, settings, test mode, CSV logic
+- `ui-next/index.html` — isolated camera-first UI preview
+- `ui-next/styles.css` — UI redesign presentation layer
+- `ui-next/ui-shell.js` — redesign-only mode switching, settings overlay, result pulse, and bottom-sheet interaction
 - `manifest.webmanifest` — installable web-app metadata
 - `assets/` — app icon assets
 - `vendor/` — vendored QR scanner runtime / license
 - `README.md` — public overview and usage
-- `CHANGELOG.md` — release history
+- `CHANGELOG.md` — public release history
 - `PRIVACY.md` — privacy behavior
 
 ## Deployment
 
 GitHub Pages deploys the `main` branch.
+
+The root URL and `/ui-next/` are intentionally separate. UI redesign work must remain isolated under `/ui-next/` until the user explicitly approves replacing the root UI.
 
 For user-facing JavaScript / CSS / worker changes, keep cache-busting asset versions in sync so Safari does not combine a new HTML file with stale static assets.
 
