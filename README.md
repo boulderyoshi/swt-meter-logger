@@ -36,6 +36,7 @@ GitHub `main` is the canonical source for this project. Current implementation s
 - 操作
   - 最近5件の記録
   - 1つ戻す
+  - 読み取った記録の一括削除
   - iOS共有シート
   - CSVファイル保存
 
