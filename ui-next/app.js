@@ -384,10 +384,6 @@ function updateNestedSettingsUi() {
 
   els.currentUnit.textContent = '';
 
-  if (stream && settings.scanTarget === 'qr') {
-    void optimizeCameraTrack(stream.getVideoTracks()[0], true);
-  }
-
   updateSettingsSummary();
   updateRoi();
   updatePrimaryUi();
@@ -952,42 +948,14 @@ function setTestMode(enabled) {
   updateDerivedUi();
 }
 
-async function optimizeCameraTrack(track, qrMode = false) {
+async function optimizeCameraTrack(track) {
   if (!track) return;
 
   try {
+    // Recognition first: let Safari manage AF / AE / white balance.
+    // Re-applying camera constraints can interrupt capture and may destabilize
+    // change-triggered reading, so ui-next does not force advanced camera modes.
     if ('contentHint' in track) track.contentHint = 'detail';
-
-    const caps = track.getCapabilities?.() || {};
-    const advanced = {};
-
-    if (caps.focusMode?.includes('continuous')) {
-      advanced.focusMode = 'continuous';
-    }
-
-    if (caps.exposureMode?.includes('continuous')) {
-      advanced.exposureMode = 'continuous';
-    }
-
-    if (caps.whiteBalanceMode?.includes('continuous')) {
-      advanced.whiteBalanceMode = 'continuous';
-    }
-
-    if (Object.keys(advanced).length) {
-      await track.applyConstraints({ advanced: [advanced] });
-    }
-
-    if (qrMode) {
-      try {
-        await track.applyConstraints({
-          width: { ideal: 3840 },
-          height: { ideal: 2160 },
-          frameRate: { ideal: 30 },
-        });
-      } catch (err) {
-        console.debug('high-resolution QR constraints unavailable', err);
-      }
-    }
   } catch (err) {
     console.debug('camera optimization unavailable', err);
   }
@@ -1012,7 +980,7 @@ async function startCamera() {
       },
     });
 
-    await optimizeCameraTrack(stream.getVideoTracks()[0], qrMode);
+    await optimizeCameraTrack(stream.getVideoTracks()[0]);
 
     els.video.srcObject = stream;
     await els.video.play();
