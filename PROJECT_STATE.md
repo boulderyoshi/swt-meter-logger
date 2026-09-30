@@ -9,7 +9,7 @@ This repository is the source of truth for SWT Logger.
 - Public app: https://boulderyoshi.github.io/swt-meter-logger/
 - Current public version: **v1.0.6**
 - UI redesign preview: https://boulderyoshi.github.io/swt-meter-logger/ui-next/
-- UI redesign preview version: **0.1.1**
+- UI redesign preview version: **0.1.2**
 
 Do not treat chat transcripts, downloaded ZIP files, browser caches, or local copies as authoritative if they differ from `main`.
 
@@ -33,6 +33,7 @@ The first `ui-next` implementation keeps the existing v1.0.6 reading logic and a
 - iPhone safe-area-aware layout
 - `ui-next/app.js` is a snapshot of the v1.0.6 runtime with only preview-isolation changes; OCR / QR / monitoring / CSV behavior is intentionally preserved
 - preview settings use a separate localStorage key, so changing `/ui-next/` settings does not alter the root public app
+- ui-next does not force AF / AE / white-balance modes through `applyConstraints`; Safari camera defaults are preserved to avoid capture interruption and recognition instability
 
 Core functions currently available:
 
