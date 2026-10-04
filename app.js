@@ -1121,7 +1121,7 @@ function captureFingerprint() {
   return gray;
 }
 
-function fingerprintDistanceShiftTolerant(a, b, maxShift = 3) {
+function fingerprintDistanceShiftTolerant(a, b, maxShift = 2) {
   if (!a || !b || a.length !== b.length) return 1;
 
   const width = changeCanvas.width;
@@ -1159,12 +1159,11 @@ function fingerprintDistanceShiftTolerant(a, b, maxShift = 3) {
 
 function changeThresholds() {
   return {
-    changed: 0.0070,
-    stable: 0.0040,
-    confirmFrames: 4,
-    settleMs: 520,
-    cooldownMs: 1000,
-    maxShift: 3,
+    changed: 0.0055,
+    confirmFrames: 3,
+    settleMs: 280,
+    cooldownMs: 600,
+    maxShift: 2,
   };
 }
 
@@ -1220,21 +1219,8 @@ async function checkDisplayChange() {
       return;
     }
 
-    const candidateDelta = fingerprintDistanceShiftTolerant(
-      fp,
-      changeCandidate,
-      thresholds.maxShift
-    );
-
-    if (candidateDelta > thresholds.stable) {
-      changeCandidate = fp;
-      changeCandidateCount = 1;
-      changeCandidateSince = now;
-      return;
-    }
-
-    changeCandidateCount += 1;
     changeCandidate = fp;
+    changeCandidateCount += 1;
 
     if (
       changeCandidateCount >= thresholds.confirmFrames &&
