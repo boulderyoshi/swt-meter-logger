@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.7 — 2026-10-05
+
+- Removed test mode from both the public UI and `/ui-next/`.
+- Added shift-tolerant frame comparison so small camera/display vibration is not treated as a content change.
+- Increased change confirmation from roughly 240 ms to about 640 ms of stable frames.
+- Added a 1-second change-detection cooldown after an accepted change.
+- Suppressed consecutive duplicate numeric records in change-triggered automatic mode.
+
 ## v1.0.6 — 2026-09-30
 
 - Added a `全削除` action for recorded readings.
