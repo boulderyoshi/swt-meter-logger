@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.8 — 2026-10-05
+
+- Fixed change-triggered automatic reading becoming too insensitive after the v1.0.7 vibration filter.
+- Removed the overly strict frame-to-frame stability gate that could continuously reset valid changes.
+- A change now triggers after it remains different from the baseline for about 0.3 seconds.
+- Kept small positional-shift tolerance and consecutive duplicate-value suppression to prevent vibration spam.
+- Reduced the post-read cooldown from 1 second to 0.6 seconds.
+
 ## v1.0.7 — 2026-10-05
 
 - Removed test mode from both the public UI and `/ui-next/`.
