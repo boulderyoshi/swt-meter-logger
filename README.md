@@ -1,6 +1,6 @@
 # SWT Logger
 
-**v1.0.7 — 正式公開版**
+**v1.0.8 — 正式公開版**
 
 iPhone Safariのカメラを使い、データ出力を持たない機器の数字表示やQRコードを読み取り、CSVへ記録・共有するWebロガーです。
 
@@ -17,7 +17,7 @@ GitHub `main` is the canonical source for this project. Current implementation s
   - 小数 1〜5桁
   - 手動読取 / 自動読取
   - 画面変化連動 / 1〜300秒タイマー
-  - 画面振動・微小なカメラずれを抑制する安定判定
+  - 微小なカメラずれを抑えつつ約0.3秒の継続変化で反応する安定判定
 - QRコード読取
   - 連続スキャン
   - 重複登録防止
@@ -71,7 +71,7 @@ iPhoneのホーム画面へ追加すると、Webアプリとして起動でき�
 
 ## Version
 
-- Current: **v1.0.7**
+- Current: **v1.0.8**
 - Release date: 2026-10-05
 
 変更履歴は [CHANGELOG.md](./CHANGELOG.md) を参照してください。
