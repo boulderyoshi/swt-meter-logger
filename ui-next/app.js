@@ -2,7 +2,6 @@ const els = {
   video: document.querySelector('#video'),
   cameraWrap: document.querySelector('#cameraWrap'),
   roi: document.querySelector('#roi'),
-  testBadge: document.querySelector('#testBadge'),
   ocrMini: document.querySelector('#ocrMini'),
   debugCanvas: document.querySelector('#debugCanvas'),
   ocrMiniText: document.querySelector('#ocrMiniText'),
@@ -44,7 +43,6 @@ const els = {
   stepRead: document.querySelector('#stepRead'),
   cameraBtn: document.querySelector('#cameraBtn'),
   readBtn: document.querySelector('#readBtn'),
-  testModeBtn: document.querySelector('#testModeBtn'),
   gapActions: document.querySelector('#gapActions'),
   blankBtn: document.querySelector('#blankBtn'),
   nextRowBtn: document.querySelector('#nextRowBtn'),
@@ -107,7 +105,6 @@ let worker = null;
 let timer = null;
 let readingActive = false;
 let isReading = false;
-let testMode = false;
 let openMenuName = null;
 
 let roiProfiles = {
@@ -120,6 +117,8 @@ let changeCheckBusy = false;
 let changeBaseline = null;
 let changeCandidate = null;
 let changeCandidateCount = 0;
+let changeCandidateSince = 0;
+let lastChangeReadAt = 0;
 
 const records = [];
 const history = [];
@@ -373,8 +372,8 @@ function updateNestedSettingsUi() {
     settings.outputMode !== 'table' || !settings.allowGaps
   );
 
-  els.blankBtn.disabled = testMode || outputFull();
-  els.nextRowBtn.disabled = testMode || outputFull();
+  els.blankBtn.disabled = outputFull();
+  els.nextRowBtn.disabled = outputFull();
 
   els.ocrMini.classList.toggle('hidden-field', settings.scanTarget === 'qr');
   els.cameraWrap.classList.toggle('qr-mode', settings.scanTarget === 'qr');
@@ -436,6 +435,8 @@ function updateRoi() {
       changeBaseline = captureFingerprint();
       changeCandidate = null;
       changeCandidateCount = 0;
+      changeCandidateSince = 0;
+      lastChangeReadAt = performance.now();
     } catch (err) {
       console.debug('baseline reset skipped', err);
     }
@@ -502,16 +503,11 @@ function stopIfOutputFull() {
   if (!outputFull()) return false;
 
   if (readingActive) stopReading(true);
-  setStatus(testMode ? 'テスト: 行数上限' : '指定行数まで完了');
+  setStatus('指定行数まで完了');
   return true;
 }
 
 function pushRecord(value, source, status, confidence) {
-  if (testMode) {
-    showReadResult(value, source, status, confidence, true);
-    return false;
-  }
-
   if (outputFull()) {
     stopIfOutputFull();
     return false;
@@ -547,7 +543,7 @@ function pushRecord(value, source, status, confidence) {
       ? { row: records.length, col: 0 }
       : nextCursorPosition(cursor);
 
-  showReadResult(record.value, source, status, confidence, false);
+  showReadResult(record.value, source, status, confidence);
   updateDerivedUi();
   stopIfOutputFull();
 
@@ -558,7 +554,6 @@ function insertBlank() {
   const settings = getSettings();
 
   if (
-    testMode ||
     settings.outputMode !== 'table' ||
     !settings.allowGaps ||
     outputFull()
@@ -579,7 +574,6 @@ function moveNextRow() {
   const settings = getSettings();
 
   if (
-    testMode ||
     settings.outputMode !== 'table' ||
     !settings.allowGaps ||
     outputFull()
@@ -601,7 +595,7 @@ function moveNextRow() {
 }
 
 function undoLast() {
-  if (testMode || !history.length) return;
+  if (!history.length) return;
 
   const action = history.pop();
 
@@ -618,7 +612,7 @@ function undoLast() {
 }
 
 function clearAllRecords() {
-  if (testMode || !records.length) return;
+  if (!records.length) return;
 
   if (!window.confirm('読み取った記録をすべて削除します。よろしいですか？')) {
     return;
@@ -694,7 +688,7 @@ function reflowRecordsForOutput() {
   return true;
 }
 
-function showReadResult(value, source, status, confidence, isTest) {
+function showReadResult(value, source, status, confidence) {
   els.currentValue.textContent = String(value);
 
   if (source === 'qr') {
@@ -704,11 +698,6 @@ function showReadResult(value, source, status, confidence, isTest) {
       confidence === null || confidence === undefined
         ? '--'
         : `${Math.round(confidence)}%`;
-  }
-
-  if (isTest) {
-    setStatus(`テスト読取: ${value}`);
-    return;
   }
 
   setStatus(status || 'OK');
@@ -915,37 +904,14 @@ function updateDerivedUi() {
       : '記録なし';
 
   const hasData = records.length > 0;
-  els.undoBtn.disabled = testMode || !history.length;
-  els.clearRecordsBtn.disabled = testMode || !hasData;
+  els.undoBtn.disabled = !history.length;
+  els.clearRecordsBtn.disabled = !hasData;
   els.shareBtn.disabled = !hasData;
   els.saveBtn.disabled = !hasData;
 
   updateRecentLog();
   renderPreview();
   updatePrimaryUi();
-}
-
-function setTestMode(enabled) {
-  if (readingActive) stopReading(false);
-
-  if (enabled === testMode) return;
-
-  if (enabled) {
-    testMode = true;
-    setStatus('テストモード');
-  } else {
-    testMode = false;
-    setStatus('通常モード');
-  }
-
-  els.testModeBtn.classList.toggle('active', testMode);
-  els.testModeBtn.textContent =
-    testMode ? 'テストモード終了' : 'テストモード';
-
-  els.testBadge.classList.toggle('hidden-field', !testMode);
-  els.cameraWrap.classList.toggle('test-mode', testMode);
-
-  updateDerivedUi();
 }
 
 async function optimizeCameraTrack(track) {
@@ -1123,22 +1089,57 @@ function captureFingerprint() {
   return gray;
 }
 
-function fingerprintDistance(a, b) {
+function fingerprintDistanceShiftTolerant(a, b, maxShift = 3) {
   if (!a || !b || a.length !== b.length) return 1;
 
-  let sum = 0;
-  for (let i = 0; i < a.length; i++) {
-    sum += Math.abs(a[i] - b[i]);
+  const width = changeCanvas.width;
+  const height = changeCanvas.height;
+  let best = 1;
+
+  for (let dy = -maxShift; dy <= maxShift; dy++) {
+    const yStart = Math.max(0, -dy);
+    const yEnd = Math.min(height, height - dy);
+
+    for (let dx = -maxShift; dx <= maxShift; dx++) {
+      const xStart = Math.max(0, -dx);
+      const xEnd = Math.min(width, width - dx);
+      let sum = 0;
+      let count = 0;
+
+      for (let y = yStart; y < yEnd; y++) {
+        const aRow = y * width;
+        const bRow = (y + dy) * width;
+
+        for (let x = xStart; x < xEnd; x++) {
+          sum += Math.abs(a[aRow + x] - b[bRow + x + dx]);
+          count += 1;
+        }
+      }
+
+      if (!count) continue;
+      const distance = sum / (count * 255);
+      if (distance < best) best = distance;
+    }
   }
 
-  return sum / (a.length * 255);
+  return best;
 }
 
 function changeThresholds() {
   return {
-    changed: 0.0055,
-    stable: 0.0045,
+    changed: 0.0070,
+    stable: 0.0040,
+    confirmFrames: 4,
+    settleMs: 520,
+    cooldownMs: 1000,
+    maxShift: 3,
   };
+}
+
+function resetChangeCandidate() {
+  changeCandidate = null;
+  changeCandidateCount = 0;
+  changeCandidateSince = 0;
 }
 
 async function checkDisplayChange() {
@@ -1158,35 +1159,59 @@ async function checkDisplayChange() {
 
     if (!changeBaseline) {
       changeBaseline = fp;
+      resetChangeCandidate();
       return;
     }
 
     const thresholds = changeThresholds();
-    const delta = fingerprintDistance(fp, changeBaseline);
+    const now = performance.now();
 
-    if (delta < thresholds.changed) {
-      changeCandidate = null;
-      changeCandidateCount = 0;
+    if (now - lastChangeReadAt < thresholds.cooldownMs) {
       return;
     }
 
-    if (
-      !changeCandidate ||
-      fingerprintDistance(fp, changeCandidate) > thresholds.stable
-    ) {
+    const delta = fingerprintDistanceShiftTolerant(
+      fp,
+      changeBaseline,
+      thresholds.maxShift
+    );
+
+    if (delta < thresholds.changed) {
+      resetChangeCandidate();
+      return;
+    }
+
+    if (!changeCandidate) {
       changeCandidate = fp;
       changeCandidateCount = 1;
+      changeCandidateSince = now;
+      return;
+    }
+
+    const candidateDelta = fingerprintDistanceShiftTolerant(
+      fp,
+      changeCandidate,
+      thresholds.maxShift
+    );
+
+    if (candidateDelta > thresholds.stable) {
+      changeCandidate = fp;
+      changeCandidateCount = 1;
+      changeCandidateSince = now;
       return;
     }
 
     changeCandidateCount += 1;
     changeCandidate = fp;
 
-    if (changeCandidateCount >= 2) {
+    if (
+      changeCandidateCount >= thresholds.confirmFrames &&
+      now - changeCandidateSince >= thresholds.settleMs
+    ) {
       changeBaseline = fp;
-      changeCandidate = null;
-      changeCandidateCount = 0;
-      await readNumberOnce(!testMode);
+      resetChangeCandidate();
+      lastChangeReadAt = now;
+      await readNumberOnce();
     }
   } finally {
     changeCheckBusy = false;
@@ -1316,14 +1341,14 @@ function normalizeNumberFromOcr(raw) {
   return `${whole}.${padded.slice(splitAt)}`;
 }
 
-async function readNumberOnce(save) {
+async function readNumberOnce() {
   if (isReading || !stream) return;
 
   isReading = true;
   updatePrimaryUi();
 
   try {
-    setStatus(testMode ? 'テスト読み取り中' : '読み取り中');
+    setStatus('読み取り中');
 
     const src = captureNumericRoi();
     const pre = buildAdaptiveBinary(src);
@@ -1340,15 +1365,24 @@ async function readNumberOnce(save) {
     els.ocrMiniText.textContent = value || 'ERROR';
 
     if (!value) {
-      setStatus(testMode ? 'テスト: OCR_ERROR' : 'OCR_ERROR');
+      setStatus('OCR_ERROR');
       return;
     }
 
-    if (save) {
-      pushRecord(value, 'number', 'OK', confidence);
-    } else {
-      showReadResult(value, 'number', 'TEST', confidence, true);
+    const settings = getSettings();
+    const last = records[records.length - 1];
+
+    if (
+      settings.readMode === 'auto' &&
+      settings.autoTrigger === 'change' &&
+      last?.source === 'number' &&
+      last.value === value
+    ) {
+      showReadResult(value, 'number', '変化なし', confidence);
+      return;
     }
+
+    pushRecord(value, 'number', 'OK', confidence);
   } catch (err) {
     console.error(err);
     setStatus('OCR_ERROR');
@@ -1789,21 +1823,12 @@ async function decodeQrCurrentFrame(forceRescue = false) {
   return decoded;
 }
 
-function handleQrDecoded(value, save) {
+function handleQrDecoded(value) {
   const normalized = String(value || '').trim();
   if (!normalized) return false;
 
   els.currentValue.textContent = normalized;
   els.confidence.textContent = 'QR';
-
-  if (!save || testMode) {
-    lastQrDetected = normalized;
-    showReadResult(normalized, 'qr', 'TEST', null, true);
-    flashQrSuccess();
-    playSuccessCue();
-    if (navigator.vibrate) navigator.vibrate(45);
-    return true;
-  }
 
   if (qrSeen.has(normalized)) {
     setStatus(`登録済み: ${normalized}`);
@@ -1823,25 +1848,25 @@ function handleQrDecoded(value, save) {
   return saved;
 }
 
-async function scanQrOnce(save, forceRescue = true) {
+async function scanQrOnce(forceRescue = true) {
   if (qrScanBusy || !stream) return;
 
   qrScanBusy = true;
 
   try {
-    setStatus(testMode ? 'テストQR読取中' : 'QR読取中');
+    setStatus('QR読取中');
 
     const decoded = await decodeQrCurrentFrame(forceRescue);
 
     if (!decoded) {
       qrMissCount += 1;
       lastQrDetected = '';
-      setStatus(testMode ? 'テスト: QR未検出' : 'QR未検出');
+      setStatus('QR未検出');
       return;
     }
 
     qrMissCount = 0;
-    handleQrDecoded(decoded, save);
+    handleQrDecoded(decoded);
   } finally {
     qrScanBusy = false;
   }
@@ -1872,12 +1897,12 @@ async function scanQrFrame() {
 
     if (
       lastQrDetected === decoded &&
-      (testMode || qrSeen.has(decoded))
+      qrSeen.has(decoded)
     ) {
       return;
     }
 
-    handleQrDecoded(decoded, !testMode);
+    handleQrDecoded(decoded);
   } finally {
     qrScanBusy = false;
   }
@@ -1938,9 +1963,9 @@ async function startReading() {
 
   if (settings.readMode === 'manual') {
     if (settings.scanTarget === 'qr') {
-      await scanQrOnce(!testMode, true);
+      await scanQrOnce(true);
     } else {
-      await readNumberOnce(!testMode);
+      await readNumberOnce();
     }
     return;
   }
@@ -1957,11 +1982,11 @@ async function startReading() {
 
     if (settings.autoTrigger === 'timer') {
       setStatus(`${settings.timerSeconds}秒間隔でQR読取`);
-      await scanQrOnce(!testMode, true);
+      await scanQrOnce(true);
 
       if (readingActive) {
         timer = setInterval(
-          () => void scanQrOnce(!testMode, true),
+          () => void scanQrOnce(true),
           settings.timerSeconds * 1000
         );
       }
@@ -1975,24 +2000,24 @@ async function startReading() {
 
   if (settings.autoTrigger === 'timer') {
     setStatus(`${settings.timerSeconds}秒間隔で読み取り`);
-    await readNumberOnce(!testMode);
+    await readNumberOnce();
 
     if (readingActive) {
       timer = setInterval(
-        () => void readNumberOnce(!testMode),
+        () => void readNumberOnce(),
         settings.timerSeconds * 1000
       );
     }
   } else {
     changeBaseline = captureFingerprint();
-    changeCandidate = null;
-    changeCandidateCount = 0;
+    resetChangeCandidate();
+    lastChangeReadAt = performance.now();
     setStatus('画面変化を監視中');
 
-    await readNumberOnce(!testMode);
+    await readNumberOnce();
 
     if (readingActive) {
-      timer = setInterval(checkDisplayChange, 120);
+      timer = setInterval(checkDisplayChange, 160);
     }
   }
 }
@@ -2005,11 +2030,11 @@ function stopReading(preserveStatus = false) {
   qrScanBusy = false;
   readingActive = false;
   changeBaseline = null;
-  changeCandidate = null;
-  changeCandidateCount = 0;
+  resetChangeCandidate();
+  lastChangeReadAt = 0;
 
   if (!preserveStatus) {
-    setStatus(testMode ? 'テスト読み取り停止' : '読み取り停止');
+    setStatus('読み取り停止');
   }
 
   updatePrimaryUi();
@@ -2148,7 +2173,6 @@ function persistMenuSettings(reflowOutput = false) {
 
   if (
     reflowOutput &&
-    !testMode &&
     outputSignature(before) !== outputSignature(current)
   ) {
     reflowRecordsForOutput();
@@ -2176,7 +2200,6 @@ function resetSettingsToDefault() {
   persistSettings(getSettings());
 
   if (
-    !testMode &&
     outputSignature(before) !== outputSignature(defaults)
   ) {
     reflowRecordsForOutput();
@@ -2242,7 +2265,6 @@ els.resetSettingsBtn.addEventListener('click', resetSettingsToDefault);
 
 els.cameraBtn.addEventListener('click', toggleCamera);
 els.readBtn.addEventListener('click', handleReadButton);
-els.testModeBtn.addEventListener('click', () => setTestMode(!testMode));
 els.blankBtn.addEventListener('click', insertBlank);
 els.nextRowBtn.addEventListener('click', moveNextRow);
 els.undoBtn.addEventListener('click', undoLast);
