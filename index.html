@@ -12,12 +12,12 @@
   <link rel="manifest" href="./manifest.webmanifest?v=1.0.2" />
   <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png?v=1.0.2" />
   <link rel="icon" type="image/png" href="./assets/icon-192.png?v=1.0.2" />
-  <link rel="stylesheet" href="./styles.css?v=1.0.6" />
+  <link rel="stylesheet" href="./styles.css?v=1.0.7" />
 </head>
 <body>
   <main class="app">
     <header class="app-header">
-      <div class="brand"><h1>SWT Logger</h1><span>v1.0.6</span></div>
+      <div class="brand"><h1>SWT Logger</h1><span>v1.0.7</span></div>
       <nav class="top-menu" aria-label="設定メニュー">
         <button class="menu-tab" data-menu="target">読取対象</button>
         <button class="menu-tab" data-menu="roi">読取範囲</button>
@@ -120,8 +120,6 @@
       <div class="camera-wrap" id="cameraWrap">
         <video id="video" playsinline muted></video>
         <div class="roi" id="roi" aria-label="読み取り範囲"></div>
-        <div id="testBadge" class="test-badge hidden-field">テストモード</div>
-
         <div class="ocr-mini" id="ocrMini" aria-label="OCRプレビュー">
           <div class="ocr-mini-title">OCR</div>
           <canvas id="debugCanvas"></canvas>
@@ -140,8 +138,6 @@
           <button id="cameraBtn" class="primary">カメラ接続</button>
           <button id="readBtn" class="primary" disabled>自動読み取り開始</button>
         </div>
-
-        <button id="testModeBtn" class="test-mode-btn">テストモード</button>
 
         <div id="gapActions" class="gap-actions hidden-field">
           <button id="blankBtn">空白</button>
@@ -217,6 +213,6 @@
   <script src="./vendor/qr-scanner.umd.min.js?v=1.0.2"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.4/dist/iife/reader/index.js"></script>
-  <script src="./app.js?v=1.0.6"></script>
+  <script src="./app.js?v=1.0.7"></script>
 </body>
 </html>
