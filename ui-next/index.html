@@ -9,7 +9,7 @@
   <meta name="description" content="SWT Logger 次世代カメラUIの開発プレビュー。" />
   <base href="../" />
   <title>SWT Logger UI Next</title>
-  <link rel="stylesheet" href="./ui-next/styles.css?v=0.1.3" />
+  <link rel="stylesheet" href="./ui-next/styles.css?v=0.1.4" />
 </head>
 <body>
   <main class="app">
@@ -23,8 +23,6 @@
           <span class="roi-corner bl"></span>
           <span class="roi-corner br"></span>
         </div>
-
-        <div id="testBadge" class="test-badge hidden-field">テストモード</div>
 
         <div class="ocr-mini" id="ocrMini" aria-label="OCRプレビュー">
           <div>OCR</div>
@@ -284,8 +282,6 @@
         <details class="advanced-details">
           <summary>高度な設定・診断</summary>
           <div class="advanced-body">
-            <button id="testModeBtn" class="test-mode-btn" type="button">テストモード</button>
-
             <details class="diagnostics-card">
               <summary>診断情報</summary>
               <div class="diagnostics">
@@ -325,7 +321,7 @@
   <script src="./vendor/qr-scanner.umd.min.js?v=1.0.2"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.4/dist/iife/reader/index.js"></script>
-  <script src="./ui-next/app.js?v=0.1.3"></script>
-  <script src="./ui-next/ui-shell.js?v=0.1.3"></script>
+  <script src="./ui-next/app.js?v=0.1.4"></script>
+  <script src="./ui-next/ui-shell.js?v=0.1.4"></script>
 </body>
 </html>
