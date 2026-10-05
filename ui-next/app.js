@@ -153,6 +153,36 @@ let qrLoopUsesVideoCallback = false;
 let qrLastScanAt = 0;
 let lastQrDetected = '';
 let successAudioContext = null;
+const destructiveConfirmations = new WeakMap();
+
+function confirmBySecondTap(button, promptText, defaultText) {
+  const now = Date.now();
+  const existing = destructiveConfirmations.get(button);
+
+  if (!existing || now > existing.until) {
+    if (existing?.timer) clearTimeout(existing.timer);
+
+    button.textContent = 'もう一度押す';
+    setStatus(promptText);
+
+    const timer = setTimeout(() => {
+      destructiveConfirmations.delete(button);
+      button.textContent = defaultText;
+    }, 3000);
+
+    destructiveConfirmations.set(button, {
+      until: now + 3000,
+      timer,
+    });
+
+    return false;
+  }
+
+  clearTimeout(existing.timer);
+  destructiveConfirmations.delete(button);
+  button.textContent = defaultText;
+  return true;
+}
 
 function setStatus(text) {
   els.status.textContent = text;
@@ -614,9 +644,13 @@ function undoLast() {
 function clearAllRecords() {
   if (!records.length) return;
 
-  const cameraWasConnected = isCameraConnected();
-
-  if (!window.confirm('読み取った記録をすべて削除します。よろしいですか？')) {
+  if (
+    !confirmBySecondTap(
+      els.clearRecordsBtn,
+      '全削除する場合は、3秒以内にもう一度「全削除」を押してください',
+      '全削除'
+    )
+  ) {
     return;
   }
 
@@ -636,14 +670,7 @@ function clearAllRecords() {
   els.currentUnit.textContent = '';
   els.confidence.textContent = '--';
 
-  const cameraDropped = cameraWasConnected && !isCameraConnected();
-  if (cameraDropped && stream) disposeCameraStream(stream);
-
-  setStatus(
-    cameraDropped
-      ? '記録を全削除しました / カメラ未接続'
-      : '記録を全削除しました'
-  );
+  setStatus('記録を全削除しました');
   updateDerivedUi();
 }
 
@@ -879,7 +906,9 @@ function isCameraConnected() {
     track.readyState === 'live' &&
     track.enabled &&
     !track.muted &&
-    els.video.srcObject === stream
+    els.video.srcObject === stream &&
+    !els.video.paused &&
+    els.video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
   );
 }
 
@@ -914,9 +943,28 @@ function handleCameraMuted(targetStream) {
 function handleCameraUnmuted(targetStream) {
   if (stream !== targetStream) return;
 
-  setStatus('カメラ接続済み');
+  if (!els.video.paused) setStatus('カメラ接続済み');
   updatePrimaryUi();
 }
+
+els.video.addEventListener('pause', () => {
+  if (!stream) return;
+
+  if (readingActive) stopReading(true);
+  setStatus('カメラ接続が中断しました');
+  updatePrimaryUi();
+});
+
+els.video.addEventListener('playing', () => {
+  if (!stream) return;
+
+  if (isCameraConnected()) setStatus('カメラ接続済み');
+  updatePrimaryUi();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) updatePrimaryUi();
+});
 
 function updatePrimaryUi() {
   const settings = getSettings();
@@ -1403,6 +1451,28 @@ function normalizeNumberFromOcr(raw) {
   return `${whole}.${padded.slice(splitAt)}`;
 }
 
+function rearmChangeDetectionAfterRead() {
+  const settings = getSettings();
+
+  if (
+    !readingActive ||
+    !isCameraConnected() ||
+    settings.scanTarget !== 'number' ||
+    settings.readMode !== 'auto' ||
+    settings.autoTrigger !== 'change'
+  ) {
+    return;
+  }
+
+  try {
+    changeBaseline = captureFingerprint();
+    resetChangeCandidate();
+    lastChangeReadAt = performance.now();
+  } catch (err) {
+    console.debug('change baseline refresh skipped', err);
+  }
+}
+
 async function readNumberOnce() {
   if (isReading || !stream) return;
 
@@ -1441,10 +1511,12 @@ async function readNumberOnce() {
       last.value === value
     ) {
       showReadResult(value, 'number', '変化なし', confidence);
+      rearmChangeDetectionAfterRead();
       return;
     }
 
     pushRecord(value, 'number', 'OK', confidence);
+    rearmChangeDetectionAfterRead();
   } catch (err) {
     console.error(err);
     setStatus('OCR_ERROR');
@@ -2249,7 +2321,13 @@ function applyAndPersistMenuSettings(reflowOutput = false) {
 }
 
 function resetSettingsToDefault() {
-  if (!window.confirm('全設定をデフォルトに戻します。よろしいですか？')) {
+  if (
+    !confirmBySecondTap(
+      els.resetSettingsBtn,
+      'デフォルト設定に戻す場合は、3秒以内にもう一度押してください',
+      'デフォルトに戻す'
+    )
+  ) {
     return;
   }
 
