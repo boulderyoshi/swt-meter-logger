@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.10 — 2026-10-05
+
+- Replaced native `window.confirm()` for destructive actions with a non-blocking second-tap confirmation so iPhone Safari does not suspend the camera during `全削除`.
+- Added video playback state to camera connection detection (`paused` / `readyState`) in addition to MediaStream track state.
+- Re-baselines change detection immediately after every valid OCR result, including duplicate-value reads, preventing AF/AE drift during OCR from causing periodic re-read attempts.
+- Disabled page zoom at the viewport level to stop rapid-tap double-tap zoom reliably on iPhone Safari.
+- Applied the same fixes to `/ui-next/`.
+
 ## v1.0.9 — 2026-10-05
 
 - Changed camera connection UI to use the actual video track state instead of only checking whether a MediaStream object exists.
