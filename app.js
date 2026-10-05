@@ -383,8 +383,9 @@ function updateNestedSettingsUi() {
 
   els.currentUnit.textContent = '';
 
-  if (stream && settings.scanTarget === 'qr') {
-    void optimizeCameraTrack(stream.getVideoTracks()[0], true);
+  const liveTrack = getCameraVideoTrack();
+  if (liveTrack && isCameraConnected() && settings.scanTarget === 'qr') {
+    void optimizeCameraTrack(liveTrack, true);
   }
 
   updateSettingsSummary();
@@ -618,6 +619,8 @@ function undoLast() {
 function clearAllRecords() {
   if (!records.length) return;
 
+  const cameraWasConnected = isCameraConnected();
+
   if (!window.confirm('読み取った記録をすべて削除します。よろしいですか？')) {
     return;
   }
@@ -638,7 +641,14 @@ function clearAllRecords() {
   els.currentUnit.textContent = '';
   els.confidence.textContent = '--';
 
-  setStatus('記録を全削除しました');
+  const cameraDropped = cameraWasConnected && !isCameraConnected();
+  if (cameraDropped && stream) disposeCameraStream(stream);
+
+  setStatus(
+    cameraDropped
+      ? '記録を全削除しました / カメラ未接続'
+      : '記録を全削除しました'
+  );
   updateDerivedUi();
 }
 
@@ -859,9 +869,63 @@ function renderPreview() {
   els.previewTable.append(tbody);
 }
 
+function getCameraVideoTrack() {
+  if (!stream) return null;
+  return stream.getVideoTracks()[0] || null;
+}
+
+function isCameraConnected() {
+  const track = getCameraVideoTrack();
+
+  return Boolean(
+    stream &&
+    stream.active &&
+    track &&
+    track.readyState === 'live' &&
+    track.enabled &&
+    !track.muted &&
+    els.video.srcObject === stream
+  );
+}
+
+function disposeCameraStream(targetStream = stream) {
+  if (!targetStream) return;
+
+  targetStream.getTracks().forEach(track => {
+    if (track.readyState === 'live') track.stop();
+  });
+
+  if (stream === targetStream) stream = null;
+  if (els.video.srcObject === targetStream) els.video.srcObject = null;
+}
+
+function handleCameraEnded(targetStream) {
+  if (stream !== targetStream) return;
+
+  if (readingActive) stopReading(true);
+  disposeCameraStream(targetStream);
+  setStatus('カメラ接続が切れました');
+  updatePrimaryUi();
+}
+
+function handleCameraMuted(targetStream) {
+  if (stream !== targetStream) return;
+
+  if (readingActive) stopReading(true);
+  setStatus('カメラ接続が中断しました');
+  updatePrimaryUi();
+}
+
+function handleCameraUnmuted(targetStream) {
+  if (stream !== targetStream) return;
+
+  setStatus('カメラ接続済み');
+  updatePrimaryUi();
+}
+
 function updatePrimaryUi() {
   const settings = getSettings();
-  const connected = Boolean(stream);
+  const connected = isCameraConnected();
 
   els.cameraBtn.textContent =
     connected ? 'カメラ切断' : 'カメラ接続';
@@ -965,10 +1029,12 @@ async function startCamera() {
     return;
   }
 
+  let newStream = null;
+
   try {
     const qrMode = isQrMode();
 
-    stream = await navigator.mediaDevices.getUserMedia({
+    newStream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: {
         facingMode: { ideal: 'environment' },
@@ -978,30 +1044,39 @@ async function startCamera() {
       },
     });
 
-    await optimizeCameraTrack(stream.getVideoTracks()[0], qrMode);
+    stream = newStream;
+    const track = stream.getVideoTracks()[0];
+    if (!track) throw new Error('video track unavailable');
+
+    track.addEventListener('ended', () => handleCameraEnded(newStream));
+    track.addEventListener('mute', () => handleCameraMuted(newStream));
+    track.addEventListener('unmute', () => handleCameraUnmuted(newStream));
+    newStream.addEventListener?.('inactive', () => handleCameraEnded(newStream));
+
+    await optimizeCameraTrack(track, qrMode);
 
     els.video.srcObject = stream;
     await els.video.play();
     await sleep(300);
 
+    if (!isCameraConnected()) {
+      throw new Error('camera track is not live');
+    }
+
     setStatus('カメラ接続済み');
     updatePrimaryUi();
   } catch (err) {
     console.error(err);
-    stream = null;
+    if (newStream) disposeCameraStream(newStream);
     setStatus('カメラ起動失敗');
+    updatePrimaryUi();
   }
 }
 
 function stopCamera() {
   if (readingActive) stopReading(false);
 
-  if (stream) {
-    stream.getTracks().forEach(track => track.stop());
-  }
-
-  stream = null;
-  els.video.srcObject = null;
+  disposeCameraStream(stream);
   setStatus('カメラ未接続');
   updatePrimaryUi();
 }
@@ -1009,11 +1084,13 @@ function stopCamera() {
 async function toggleCamera() {
   initSuccessAudio();
 
-  if (stream) {
+  if (isCameraConnected()) {
     stopCamera();
-  } else {
-    await startCamera();
+    return;
   }
+
+  if (stream) disposeCameraStream(stream);
+  await startCamera();
 }
 
 function getVisibleVideoRect() {
@@ -1971,7 +2048,7 @@ async function startReading() {
 
   if (
     readingActive ||
-    !stream ||
+    !isCameraConnected() ||
     outputFull()
   ) {
     return;
