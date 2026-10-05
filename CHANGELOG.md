@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.9 — 2026-10-05
+
+- Changed camera connection UI to use the actual video track state instead of only checking whether a MediaStream object exists.
+- Added track `ended`, `mute`, `unmute`, and stream `inactive` handling so stale camera sessions no longer appear connected.
+- After `全削除`, the camera state is rechecked; if Safari dropped the camera during confirmation, the UI returns to the disconnected state.
+- Added `touch-action: manipulation` to suppress Safari double-tap zoom during rapid control taps while preserving normal scrolling and pinch zoom.
+- Applied the same camera-state and rapid-tap behavior to `/ui-next/`.
+
 ## v1.0.8 — 2026-10-05
 
 - Fixed change-triggered automatic reading becoming too insensitive after the v1.0.7 vibration filter.
