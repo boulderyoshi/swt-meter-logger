@@ -7,9 +7,9 @@ This repository is the source of truth for SWT Logger.
 - Repository: `boulderyoshi/swt-meter-logger`
 - Canonical branch: `main`
 - Public app: https://boulderyoshi.github.io/swt-meter-logger/
-- Current public version: **v1.0.8**
+- Current public version: **v1.0.9**
 - UI redesign preview: https://boulderyoshi.github.io/swt-meter-logger/ui-next/
-- UI redesign preview version: **0.1.5**
+- UI redesign preview version: **0.1.6**
 
 Do not treat chat transcripts, downloaded ZIP files, browser caches, or local copies as authoritative if they differ from `main`.
 
@@ -17,7 +17,7 @@ Do not treat chat transcripts, downloaded ZIP files, browser caches, or local co
 
 The first formal public version is complete and deployed through GitHub Pages.
 
-The camera-first UI redesign is being developed separately under `/ui-next/`. The root public app remains the approved v1.0.8 UI until explicit approval to replace it.
+The camera-first UI redesign is being developed separately under `/ui-next/`. The root public app remains the approved v1.0.9 UI until explicit approval to replace it.
 
 The first `ui-next` implementation keeps the existing v1.0.6 reading logic and adds a separate presentation shell:
 
@@ -35,7 +35,7 @@ The first `ui-next` implementation keeps the existing v1.0.6 reading logic and a
 - live ROI sliders auto-save while the camera and yellow frame remain visible
 - default OCR ROI: x 50%, y 30%, width 70%, height 25%
 - default QR ROI: x 50%, y 27%, width 60%, height 35%
-- `ui-next/app.js` is synchronized with the v1.0.8 runtime while keeping preview-isolation changes; OCR / QR / monitoring / CSV behavior is intentionally aligned
+- `ui-next/app.js` is synchronized with the v1.0.9 runtime while keeping preview-isolation changes; OCR / QR / monitoring / CSV behavior is intentionally aligned
 - preview settings use a separate localStorage key, so changing `/ui-next/` settings does not alter the root public app
 - ui-next does not force AF / AE / white-balance modes through `applyConstraints`; Safari camera defaults are preserved to avoid capture interruption and recognition instability
 
@@ -64,6 +64,8 @@ Core functions currently available:
 - Recent-record list
 - Undo last operation
 - Confirmed clear-all reset for recorded readings
+- Camera UI synchronized to actual live/muted/ended track state
+- Rapid-tap double-tap zoom suppression on interactive controls
 - iOS share sheet
 - CSV file save
 - PWA manifest and app icon
@@ -76,7 +78,7 @@ Core functions currently available:
 - `styles.css` — current public mobile UI
 - `app.js` — current public camera, OCR, QR, output engine, settings, monitoring, CSV logic
 - `ui-next/index.html` — isolated camera-first UI preview
-- `ui-next/app.js` — isolated v1.0.8-aligned runtime for the preview
+- `ui-next/app.js` — isolated v1.0.9-aligned runtime for the preview
 - `ui-next/styles.css` — UI redesign presentation layer
 - `ui-next/ui-shell.js` — redesign-only mode switching, settings overlay, result pulse, and bottom-sheet interaction
 - `manifest.webmanifest` — installable web-app metadata
